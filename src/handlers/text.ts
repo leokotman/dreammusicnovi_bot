@@ -1,5 +1,6 @@
 import type { Context } from "telegraf";
 import { env } from "../config/env";
+import { isAdmin } from "../config/admins";
 import { getMainMenu } from "../menus/main.menu";
 import { getState, clearState } from "../state/userState";
 import { checkTextRateLimit } from "../middleware/rateLimit";
@@ -19,8 +20,8 @@ export async function handleText(ctx: Context): Promise<void> {
     const text = msg && "text" in msg ? msg.text : undefined;
     if (!userId || !text) return;
 
-    // 1) Teacher editing content (no rate limit for admin)
-    if (env.TEACHER_USER_ID && userId.toString() === env.TEACHER_USER_ID) {
+    // 1) Admin editing content or adding admin (no rate limit)
+    if (isAdmin(userId.toString())) {
       const handled = await handleAdminEdit(userId, text, (msg) =>
         ctx.replyWithHTML(msg)
       );

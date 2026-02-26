@@ -8,7 +8,7 @@ import type { Context } from "telegraf";
 const FALLBACK_MESSAGE =
   "Произошла ошибка. Попробуйте позже или напишите преподавателю через меню.";
 
-function isMessageNotModified(err: unknown): boolean {
+export function isMessageNotModified(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { response?: { description?: string }; description?: string };
   const desc = e.response?.description ?? e.description ?? "";

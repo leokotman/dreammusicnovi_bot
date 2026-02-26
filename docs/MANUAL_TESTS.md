@@ -64,9 +64,9 @@ Use this list to verify the bot after changes. Test as a **regular user** and (w
 
 ---
 
-## 6. Admin (teacher account only)
+## 6. Admin (teacher and dev)
 
-Use the account whose ID is in `TEACHER_USER_ID`.
+Use an account whose ID is in `TEACHER_USER_ID` or `DEV_ID`. Only `TEACHER_CHAT_ID` receives forwarded “ask your question” messages; dev does not.
 
 | # | Action | Expected |
 |---|--------|----------|
@@ -79,7 +79,9 @@ Use the account whose ID is in `TEACHER_USER_ID`.
 | 6.7 | Задать вопрос → Я уже слишком взрослый? | Updated FAQ answer is shown. |
 | 6.8 | (Optional) Check `data/overrides.json` | File exists and contains your overrides. |
 
-**Non-teacher:** From another account, send `/admin` or `/edit_lesson price`. Bot should do nothing (no reply or no special behavior).
+**Non-admin:** From an account that is not in `TEACHER_USER_ID` or `DEV_ID`, send `/admin` or `/edit_lesson price`. Bot does nothing (no reply).
+
+**Note:** If /admin is set in BotFather with scope **“Group administrators”**, it only appears in groups, not in private chats. For the teacher to see /admin in a 1:1 chat: BotFather → Set Commands → choose scope **Default** (private chats) → add `admin - Админ` there. The bot still only responds to /admin for TEACHER_USER_ID and DEV_ID.
 
 ---
 
@@ -100,7 +102,7 @@ Use the account whose ID is in `TEACHER_USER_ID`.
 | 8.1 | Tap the same menu button twice in a row (e.g. Об уроках twice) | No crash; no “Произошла ошибка” to user. |
 | 8.2 | After “Задать свой вопрос”, send a message | Question is forwarded (if `TEACHER_CHAT_ID` set) and thank-you message is shown; no duplicate sends. |
 | 8.3 | Send a very long message as “your question” | Forwarded as-is (or truncated by Telegram); no crash. |
-| 8.4 | Restart bot, then send `/start` | Main menu with current content (and overrides if any). |
+| 8.4 | **Restart:** Stop the server (Ctrl+C), run `npm run dev` again, then in Telegram send `/start` | Main menu appears with current content (and overrides if any). |
 
 ---
 

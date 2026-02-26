@@ -5,6 +5,7 @@ import { getMainMenu, mainMenuMessage, MAIN, LESSONS, ASK, CONTACT } from "../me
 import {
   getLessonsMenu,
   getLessonsMenuForTopic,
+  getLessonLabel,
   lessonsMenuMessage,
   parseLessonCallback,
   LESSONS_BACK,
@@ -14,6 +15,7 @@ import {
   getAskMenuForTopic,
   askMenuMessage,
   parseFaqCallback,
+  FAQ_LABELS,
   ASK_CUSTOM,
   ASK_BACK,
 } from "../menus/ask.menu";
@@ -55,8 +57,9 @@ export function registerCallbacks(bot: {
         return;
       }
       await ctx.answerCbQuery();
-      const text = getLesson(key);
-      await ctx.editMessageText(text, {
+      const content = getLesson(key);
+      const breadcrumb = `🎶 Об уроках → ${getLessonLabel(key)}`;
+      await ctx.editMessageText(`${breadcrumb}\n\n${content}`, {
         parse_mode: "HTML",
         ...getLessonsMenuForTopic(),
       });
@@ -95,8 +98,9 @@ export function registerCallbacks(bot: {
         return;
       }
       await ctx.answerCbQuery();
-      const text = getFaq(key);
-      await ctx.editMessageText(text, {
+      const content = getFaq(key);
+      const breadcrumb = `❓ Задать вопрос → ${FAQ_LABELS[key]}`;
+      await ctx.editMessageText(`${breadcrumb}\n\n${content}`, {
         parse_mode: "HTML",
         ...getAskMenuForTopic(),
       });

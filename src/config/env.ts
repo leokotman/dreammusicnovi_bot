@@ -6,6 +6,7 @@
  */
 import dotenv from "dotenv";
 import path from "path";
+import { parseAdminIds } from "./envHelpers";
 
 dotenv.config();
 dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
@@ -25,10 +26,14 @@ function requireEnv(key: string): string {
 export const env = {
   BOT_TOKEN: requireEnv("BOT_TOKEN"),
   NODE_ENV: getEnv("NODE_ENV") ?? "development",
-  /** Telegram chat ID where to forward "ask your question" messages (e.g. teacher's private chat) */
+  /** Telegram chat ID where to forward "ask your question" messages (teacher only; for testing set to your ID) */
   TEACHER_CHAT_ID: getEnv("TEACHER_CHAT_ID"),
-  /** Telegram user ID of the teacher — only this user can use /admin and edit content */
+  /** Telegram user ID of the teacher — can use /admin and edit content */
   TEACHER_USER_ID: getEnv("TEACHER_USER_ID"),
+  /** Optional: your Telegram user ID — same /admin rights as teacher, but does not receive forwarded questions */
+  DEV_ID: getEnv("DEV_ID"),
+  /** Optional: comma-separated list of Telegram user IDs with admin rights (e.g. "123,456,789") */
+  ADMIN_IDS: parseAdminIds(getEnv("ADMIN_IDS")),
 } as const;
 
 export const contact = {

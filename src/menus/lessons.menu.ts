@@ -35,6 +35,10 @@ export function getLessonsMenuForTopic() {
 
 export const lessonsMenuMessage = "🎶 <b>Об уроках</b>\n\nВыберите тему:";
 
+export function getLessonLabel(key: LessonKey): string {
+  return LABELS[key];
+}
+
 export function parseLessonCallback(data: string): LessonKey | null {
   if (!data.startsWith(LESSONS_PREFIX)) return null;
   const key = data.slice(LESSONS_PREFIX.length) as LessonKey;
