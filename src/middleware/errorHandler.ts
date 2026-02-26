@@ -9,10 +9,9 @@ const FALLBACK_MESSAGE =
   "Произошла ошибка. Попробуйте позже или напишите преподавателю через меню.";
 
 function isMessageNotModified(err: unknown): boolean {
-  const desc =
-    err && typeof err === "object" && "response" in err
-      ? (err as { response?: { description?: string } }).response?.description
-      : "";
+  if (!err || typeof err !== "object") return false;
+  const e = err as { response?: { description?: string }; description?: string };
+  const desc = e.response?.description ?? e.description ?? "";
   return typeof desc === "string" && desc.includes("message is not modified");
 }
 

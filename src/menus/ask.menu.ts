@@ -1,5 +1,6 @@
 import { Markup } from "telegraf";
 import type { FaqKey } from "../content/loader";
+import { MAIN } from "./main.menu";
 
 const FAQ_PREFIX = "faq:";
 const ASK_CUSTOM = "ask_custom";
@@ -13,10 +14,21 @@ export const FAQ_LABELS: Record<FaqKey, string> = {
   noEarForMusic: "У меня нет слуха — получится ли?",
 };
 
+const faqButtons = (Object.keys(FAQ_LABELS) as FaqKey[]).map((key) =>
+  Markup.button.callback(FAQ_LABELS[key], `${FAQ_PREFIX}${key}`)
+);
+
+/** For the ask list screen — back goes to main menu */
 export function getAskMenu() {
-  const faqButtons = (Object.keys(FAQ_LABELS) as FaqKey[]).map((key) =>
-    Markup.button.callback(FAQ_LABELS[key], `${FAQ_PREFIX}${key}`)
-  );
+  return Markup.inlineKeyboard([
+    ...faqButtons.map((b) => [b]),
+    [Markup.button.callback("✏️ Задать свой вопрос", ASK_CUSTOM)],
+    [Markup.button.callback("◀️ В главное меню", MAIN)],
+  ]);
+}
+
+/** For an FAQ answer screen — back goes to ask list */
+export function getAskMenuForTopic() {
   return Markup.inlineKeyboard([
     ...faqButtons.map((b) => [b]),
     [Markup.button.callback("✏️ Задать свой вопрос", ASK_CUSTOM)],

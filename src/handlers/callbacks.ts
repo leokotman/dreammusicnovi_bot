@@ -4,12 +4,14 @@ import { getLesson, getFaq } from "../content/loader";
 import { getMainMenu, mainMenuMessage, MAIN, LESSONS, ASK, CONTACT } from "../menus/main.menu";
 import {
   getLessonsMenu,
+  getLessonsMenuForTopic,
   lessonsMenuMessage,
   parseLessonCallback,
   LESSONS_BACK,
 } from "../menus/lessons.menu";
 import {
   getAskMenu,
+  getAskMenuForTopic,
   askMenuMessage,
   parseFaqCallback,
   ASK_CUSTOM,
@@ -56,7 +58,7 @@ export function registerCallbacks(bot: {
       const text = getLesson(key);
       await ctx.editMessageText(text, {
         parse_mode: "HTML",
-        ...getLessonsMenu(),
+        ...getLessonsMenuForTopic(),
       });
     });
   });
@@ -64,9 +66,9 @@ export function registerCallbacks(bot: {
   bot.action(LESSONS_BACK, async (ctx) => {
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
-      await ctx.editMessageText(mainMenuMessage, {
+      await ctx.editMessageText(lessonsMenuMessage, {
         parse_mode: "HTML",
-        ...getMainMenu(),
+        ...getLessonsMenu(),
       });
     });
   });
@@ -96,7 +98,7 @@ export function registerCallbacks(bot: {
       const text = getFaq(key);
       await ctx.editMessageText(text, {
         parse_mode: "HTML",
-        ...getAskMenu(),
+        ...getAskMenuForTopic(),
       });
     });
   });
@@ -119,9 +121,9 @@ export function registerCallbacks(bot: {
   bot.action(ASK_BACK, async (ctx) => {
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
-      await ctx.editMessageText(mainMenuMessage, {
+      await ctx.editMessageText(askMenuMessage, {
         parse_mode: "HTML",
-        ...getMainMenu(),
+        ...getAskMenu(),
       });
     });
   });
