@@ -1,4 +1,6 @@
 import { handleAdminEdit } from "../admin";
+import * as adminsModule from "../../config/admins";
+import * as botCommandsModule from "../../botCommands";
 import * as loader from "../../content/loader";
 import * as userState from "../../state/userState";
 
@@ -66,6 +68,8 @@ const setSavedFaqLabel = loader.setSavedFaqLabel as jest.Mock;
 const setSectionLabel = loader.setSectionLabel as jest.Mock;
 const addSection = loader.addSection as jest.Mock;
 const addSectionSubItem = loader.addSectionSubItem as jest.Mock;
+const addCustomLesson = loader.addCustomLesson as jest.Mock;
+const addCustomFaq = loader.addCustomFaq as jest.Mock;
 const getState = userState.getState as jest.Mock;
 const clearState = userState.clearState as jest.Mock;
 const setState = userState.setState as jest.Mock;
@@ -200,5 +204,64 @@ describe("handleAdminEdit", () => {
     expect(setSectionLabel).toHaveBeenCalledWith("main_raspisaniye", "Новое расписание");
     expect(clearState).toHaveBeenCalledWith(userId);
     expect(reply).toHaveBeenCalledWith("Название пункта главного меню обновлено.");
+  });
+
+  it("handles awaiting_new_lesson_label: sets state and asks for content", async () => {
+    getState.mockReturnValue({ type: "awaiting_new_lesson_label" });
+    const result = await handleAdminEdit(userId, "  Новый раздел  ", reply);
+    expect(result).toBe(true);
+    expect(setState).toHaveBeenCalledWith(userId, { type: "awaiting_new_lesson_content", label: "Новый раздел" });
+    expect(reply).toHaveBeenCalledWith("Название раздела: «Новый раздел». Теперь отправьте текст раздела.");
+  });
+
+  it("handles awaiting_new_lesson_content: calls addCustomLesson and clears state", async () => {
+    getState.mockReturnValue({ type: "awaiting_new_lesson_content", label: "Новый раздел" });
+    const result = await handleAdminEdit(userId, "<p>Текст раздела</p>", reply);
+    expect(result).toBe(true);
+    expect(addCustomLesson).toHaveBeenCalledWith("Новый раздел", "Текст раздела");
+    expect(clearState).toHaveBeenCalledWith(userId);
+    expect(reply).toHaveBeenCalledWith("Раздел «Новый раздел» добавлен (ключ: new_lesson_key).");
+  });
+
+  it("handles awaiting_new_faq_label: sets state and asks for answer", async () => {
+    getState.mockReturnValue({ type: "awaiting_new_faq_label" });
+    const result = await handleAdminEdit(userId, "Как записаться?", reply);
+    expect(result).toBe(true);
+    expect(setState).toHaveBeenCalledWith(userId, { type: "awaiting_new_faq_content", label: "Как записаться?" });
+    expect(reply).toHaveBeenCalledWith("Вопрос: «Как записаться?». Теперь отправьте текст ответа.");
+  });
+
+  it("handles awaiting_new_faq_content: calls addCustomFaq and clears state", async () => {
+    getState.mockReturnValue({ type: "awaiting_new_faq_content", label: "Как записаться?" });
+    const result = await handleAdminEdit(userId, "Напишите в Telegram.", reply);
+    expect(result).toBe(true);
+    expect(addCustomFaq).toHaveBeenCalledWith("Как записаться?", "Напишите в Telegram.");
+    expect(clearState).toHaveBeenCalledWith(userId);
+    expect(reply).toHaveBeenCalledWith("Вопрос «Как записаться?» добавлен (ключ: new_faq_key).");
+  });
+
+  it("handles awaiting_add_admin with invalid id: replies error and clears state", async () => {
+    getState.mockReturnValue({ type: "awaiting_add_admin" });
+    const result = await handleAdminEdit(userId, "not a number", reply);
+    expect(result).toBe(true);
+    expect(clearState).toHaveBeenCalledWith(userId);
+    expect(reply).toHaveBeenCalledWith("Нужно отправить одно число (user ID). Попробуйте снова или отправьте /add_admin.");
+  });
+
+  it("handles awaiting_add_admin with valid id: calls addAdmin and setCommandsForNewAdmin", async () => {
+    getState.mockReturnValue({ type: "awaiting_add_admin" });
+    const result = await handleAdminEdit(userId, "  99999  ", reply);
+    expect(result).toBe(true);
+    expect(clearState).toHaveBeenCalledWith(userId);
+    expect(adminsModule.addAdmin).toHaveBeenCalledWith(99999);
+    expect(botCommandsModule.setCommandsForNewAdmin).toHaveBeenCalledWith(99999);
+    expect(reply).toHaveBeenCalledWith("Пользователь 99999 добавлен в админы.");
+  });
+
+  it("returns false for unhandled state type (fallthrough)", async () => {
+    getState.mockReturnValue({ type: "awaiting_edit_custom_section_label", sectionKey: "sec_foo" } as never);
+    const result = await handleAdminEdit(userId, "Label", reply);
+    expect(result).toBe(false);
+    expect(reply).not.toHaveBeenCalled();
   });
 });

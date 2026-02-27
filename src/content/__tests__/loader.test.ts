@@ -91,6 +91,19 @@ describe("loader", () => {
       expect(getFaq("amITooOld")).toBe("<p>faq content</p>");
     });
 
+    it("getLesson returns fallback when file is missing", () => {
+      initContent();
+      mockFs.readFileSync.mockImplementation(((p: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) return "{}";
+        if (pathStr.includes("missing")) throw new Error("ENOENT");
+        if (pathStr.includes("lessons")) return "<p>lesson content</p>";
+        if (pathStr.includes("faq")) return "<p>faq content</p>";
+        throw new Error("file not found");
+      }) as typeof fs.readFileSync);
+      expect(getLesson("missing")).toContain("Содержание не найдено");
+    });
+
     it("setSavedLessonContent then getLesson returns saved content", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");

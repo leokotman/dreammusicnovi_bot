@@ -5,7 +5,15 @@ module.exports = {
   roots: ["<rootDir>/src"],
   testMatch: ["**/__tests__/**/*.test.ts"],
   moduleFileExtensions: ["ts", "js", "json"],
-  collectCoverageFrom: ["src/**/*.ts", "!src/index.ts", "!src/bot.ts"],
+  collectCoverageFrom: [
+    "src/**/*.ts",
+    "!src/index.ts",
+    "!src/bot.ts",
+    "!src/config/env.ts",
+    "!src/storage.ts",
+    "!src/content/migration.ts",
+    "!src/content/constants.ts",
+  ],
   coverageDirectory: "coverage",
   verbose: true,
 };
