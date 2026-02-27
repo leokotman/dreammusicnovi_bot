@@ -53,6 +53,12 @@ export type SavedContentData = {
   hiddenLessonKeys?: string[];
   /** FAQ question keys to hide from «Задать вопрос». */
   hiddenFaqKeys?: string[];
+  /** Contact link overrides (admin-editable). Falls back to env if not set. */
+  contactOverrides?: {
+    telegramUsername?: string;
+    instagramUrl?: string;
+    email?: string;
+  };
   /** Legacy keys: only present in old Blob data; migration (or scripts/migrate-blob-to-unified-sections.ts) converts to sections/sectionOrder/hiddenSectionIds/deletedSections. */
   mainSectionLabels?: Record<string, string>;
   customMainSections?: Record<

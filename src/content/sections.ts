@@ -7,6 +7,7 @@ import { getSavedContent, setSavedContent } from "./state";
 import { migrateToUnifiedSections } from "./migration";
 import { DEFAULT_SECTION_IDS, DEFAULT_SECTION_LABELS, DELETED_SECTION_RETENTION_MONTHS } from "./constants";
 import { slugFromLabelForSection, slugForSubItem } from "./slug";
+import { sanitizeForDb } from "../utils/sanitize";
 
 
 function getSectionsMap(): Record<string, SectionDef> {
@@ -89,7 +90,7 @@ export async function setSectionLabel(id: string, label: string): Promise<void> 
   const sectionsMap = current.sections ?? {};
   const section = sectionsMap[id] ?? (DEFAULT_SECTION_IDS.includes(id as (typeof DEFAULT_SECTION_IDS)[number]) ? { label: DEFAULT_SECTION_LABELS[id], type: id as "lessons" | "ask" | "contact" } : undefined);
   if (!section) return;
-  const updated = { ...section, label: label.trim() };
+  const updated = { ...section, label: sanitizeForDb(label) };
   const sections = { ...sectionsMap, [id]: updated };
   setSavedContent({ ...current, sections });
   await saveSavedContent(getSavedContent());
@@ -100,7 +101,7 @@ export async function addSection(label: string, content: string): Promise<string
   const data = await loadSavedContent();
   const migrated = migrateToUnifiedSections(data ?? {});
   const key = slugFromLabelForSection(label, migrated.sectionOrder ?? [], migrated.sections ?? {});
-  const sections: Record<string, SectionDef> = { ...(migrated.sections ?? {}), [key]: { label: label.trim(), type: "flat", content: content.trim() } };
+  const sections: Record<string, SectionDef> = { ...(migrated.sections ?? {}), [key]: { label: sanitizeForDb(label), type: "flat", content: sanitizeForDb(content) } };
   const order = [...(migrated.sectionOrder ?? [])];
   if (!order.includes(key)) order.push(key);
   const next: SavedContentData = { ...migrated, sections, sectionOrder: order };
@@ -116,7 +117,7 @@ export async function addSectionNested(label: string): Promise<string> {
   const key = slugFromLabelForSection(label, migrated.sectionOrder ?? [], migrated.sections ?? {});
   const sections: Record<string, SectionDef> = {
     ...(migrated.sections ?? {}),
-    [key]: { label: label.trim(), type: "nested", subItems: {} as Record<string, { label: string; content: string }>, subItemOrder: [] as string[] },
+    [key]: { label: sanitizeForDb(label), type: "nested", subItems: {} as Record<string, { label: string; content: string }>, subItemOrder: [] as string[] },
   };
   const order = [...(migrated.sectionOrder ?? [])];
   if (!order.includes(key)) order.push(key);
@@ -137,7 +138,7 @@ export async function addSectionSubItem(sectionKey: string, itemLabel: string, c
   const sectionsMap = current.sections ?? {};
   const existing = sectionsMap[sectionKey];
   if (!existing || !isSectionNestedDef(existing)) throw new Error("Section not found or not nested");
-  const subItems = { ...existing.subItems, [itemKey]: { label: itemLabel.trim(), content: content.trim() } };
+  const subItems = { ...existing.subItems, [itemKey]: { label: sanitizeForDb(itemLabel), content: sanitizeForDb(content) } };
   const subItemOrder = [...(existing.subItemOrder ?? []), itemKey];
   const newSections: Record<string, SectionDef> = { ...sectionsMap, [sectionKey]: { ...existing, subItems, subItemOrder } };
   const next: SavedContentData = { ...current, sections: newSections };

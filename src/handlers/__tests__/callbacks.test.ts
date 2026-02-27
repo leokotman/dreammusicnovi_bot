@@ -47,12 +47,12 @@ jest.mock("../../menus/ask.menu", () => ({
   ASK_BACK: "ask_back",
 }));
 
-jest.mock("../../config/env", () => ({
-  contact: {
+jest.mock("../../config/contact", () => ({
+  getContact: jest.fn().mockReturnValue({
     telegramUsername: "teacher",
     instagramUrl: "https://instagram.com/teacher",
     email: "teacher@example.com",
-  },
+  }),
 }));
 
 jest.mock("../../state/userState", () => ({

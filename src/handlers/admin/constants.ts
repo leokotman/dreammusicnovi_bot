@@ -35,5 +35,8 @@ export const ADM_RESTORE_SECTION_PREFIX = "adm_restore_sec:";
 export const ADM_RESTORE_LESSON_PREFIX = "adm_restore_lesson:";
 export const ADM_RESTORE_FAQ_PREFIX = "adm_restore_faq:";
 
+/** Contact link edit: adm_contact_edit:telegram | instagram | email */
+export const ADM_CONTACT_EDIT_PREFIX = "adm_contact_edit:";
+
 /** Leave room for instruction (Telegram limit 4096). */
 export const MAX_PREVIEW_LEN = 2800;

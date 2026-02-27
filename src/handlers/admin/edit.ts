@@ -16,6 +16,7 @@ import {
   addSectionSubItem,
   addCustomLesson,
   addCustomFaq,
+  setContactOverride,
   getSections,
   getSectionSubIds,
 } from "../../content/loader";
@@ -120,6 +121,24 @@ export async function handleAdminEdit(
     const key = await addCustomFaq(state.label, stripHtml(text));
     clearState(userId);
     await reply(`Вопрос «${state.label}» добавлен (ключ: ${key}).`);
+    return true;
+  }
+  if (state.type === "awaiting_edit_contact_telegram") {
+    await setContactOverride("telegramUsername", text.trim());
+    clearState(userId);
+    await reply("Telegram username обновлён.");
+    return true;
+  }
+  if (state.type === "awaiting_edit_contact_instagram") {
+    await setContactOverride("instagramUrl", text.trim());
+    clearState(userId);
+    await reply("Ссылка на Instagram обновлена.");
+    return true;
+  }
+  if (state.type === "awaiting_edit_contact_email") {
+    await setContactOverride("email", text.trim());
+    clearState(userId);
+    await reply("Email обновлён.");
     return true;
   }
   if (state.type === "awaiting_add_admin") {

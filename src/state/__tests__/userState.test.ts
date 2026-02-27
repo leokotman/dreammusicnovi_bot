@@ -79,6 +79,21 @@ describe("userState", () => {
     expect(getState(userId)).toEqual({ type: "awaiting_edit_custom_section_label", sectionKey: "main_raspisaniye" });
   });
 
+  it("returns set state for awaiting_edit_contact_telegram", () => {
+    setState(userId, { type: "awaiting_edit_contact_telegram" });
+    expect(getState(userId)).toEqual({ type: "awaiting_edit_contact_telegram" });
+  });
+
+  it("returns set state for awaiting_edit_contact_instagram", () => {
+    setState(userId, { type: "awaiting_edit_contact_instagram" });
+    expect(getState(userId)).toEqual({ type: "awaiting_edit_contact_instagram" });
+  });
+
+  it("returns set state for awaiting_edit_contact_email", () => {
+    setState(userId, { type: "awaiting_edit_contact_email" });
+    expect(getState(userId)).toEqual({ type: "awaiting_edit_contact_email" });
+  });
+
   it("returns set state for awaiting_add_admin", () => {
     setState(userId, { type: "awaiting_add_admin" });
     expect(getState(userId)).toEqual({ type: "awaiting_add_admin" });

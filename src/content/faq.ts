@@ -7,6 +7,7 @@ import { getSavedContent, setSavedContent } from "./state";
 import { FAQ_KEYS, FIXED_FAQ_LABELS } from "./constants";
 import { slugFromLabel } from "./slug";
 import { getAllLessonKeys, getAllFaqKeys } from "./keys";
+import { sanitizeForDb } from "../utils/sanitize";
 
 function hiddenFaqKeys(): string[] {
   return getSavedContent().hiddenFaqKeys ?? [];
@@ -27,7 +28,7 @@ export async function setSavedFaqContent(key: string, html: string): Promise<voi
   const data = await loadSavedContent();
   const current = data ?? {};
   const faq = { ...(current.faq ?? {}) };
-  faq[key] = html;
+  faq[key] = sanitizeForDb(html);
   const next = { ...current, faq };
   setSavedContent(next);
   await saveSavedContent(next);
@@ -37,7 +38,7 @@ export async function setSavedFaqContent(key: string, html: string): Promise<voi
 export async function setSavedFaqLabel(key: string, label: string): Promise<void> {
   const data = await loadSavedContent();
   const current = data ?? {};
-  const labels = { ...(current.faqLabelOverrides ?? {}), [key]: label.trim() };
+  const labels = { ...(current.faqLabelOverrides ?? {}), [key]: sanitizeForDb(label) };
   const next = { ...current, faqLabelOverrides: labels };
   setSavedContent(next);
   await saveSavedContent(next);
@@ -48,8 +49,8 @@ export async function addCustomFaq(label: string, content: string): Promise<stri
   const key = slugFromLabel(label, getAllLessonKeys(), getAllFaqKeys());
   const data = await loadSavedContent();
   const current = data ?? {};
-  const labels = { ...(current.customFaqLabels ?? {}), [key]: label };
-  const faq = { ...(current.faq ?? {}), [key]: content };
+  const labels = { ...(current.customFaqLabels ?? {}), [key]: sanitizeForDb(label) };
+  const faq = { ...(current.faq ?? {}), [key]: sanitizeForDb(content) };
   const next = { ...current, customFaqLabels: labels, faq };
   setSavedContent(next);
   await saveSavedContent(next);

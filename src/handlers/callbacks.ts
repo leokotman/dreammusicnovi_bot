@@ -38,7 +38,7 @@ import {
   ASK_CUSTOM,
   ASK_BACK,
 } from "../menus/ask.menu";
-import { contact } from "../config/env";
+import { getContact } from "../config/contact";
 import { setState } from "../state/userState";
 import { withErrorHandling } from "../middleware/errorHandler";
 
@@ -156,6 +156,7 @@ export function registerCallbacks(bot: {
   bot.action(CONTACT, async (ctx) => {
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
+      const contact = getContact();
       const telegramUrl = `https://t.me/${contact.telegramUsername}`;
       const emailText = `📧 <b>Email</b>\n${contact.email}`;
       const contactTitle = getSectionLabel("contact");

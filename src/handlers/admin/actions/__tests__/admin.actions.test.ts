@@ -56,6 +56,14 @@ const loader = require("../../../../content/loader");
 const userState = require("../../../../state/userState");
 const menus = require("../../menus");
 
+jest.mock("../../../../config/contact", () => ({
+  getContact: jest.fn().mockReturnValue({
+    telegramUsername: "teacher",
+    instagramUrl: "https://instagram.com/teacher",
+    email: "teacher@example.com",
+  }),
+}));
+
 jest.mock("../../menus", () => ({
   canUseAdmin: jest.fn().mockReturnValue(true),
   getAdminMainMenu: jest.fn().mockReturnValue({ reply_markup: { inline_keyboard: [] } }),
@@ -290,6 +298,35 @@ describe("admin actions", () => {
         expect.stringContaining("удалён"),
         expect.any(Object)
       );
+    });
+
+    it("contact section shows Telegram, Instagram, Email edit buttons", async () => {
+      const bot = createBot();
+      registerAdminSections(bot);
+      const handler = getActionHandler(`${C.ADM_SECTION_PREFIX}contact`);
+      expect(handler).toBeDefined();
+      const ctx = createCtx(`${C.ADM_SECTION_PREFIX}contact`);
+      await handler!(ctx);
+      expect(ctx.editMessageText).toHaveBeenCalledWith(
+        expect.stringContaining("Контакты"),
+        expect.any(Object)
+      );
+      const keyboard = (ctx.editMessageText as jest.Mock).mock.calls[0][1].reply_markup?.inline_keyboard as { text?: string }[][];
+      const flat = keyboard.flatMap((row) => row.map((b) => b.text));
+      expect(flat).toContain("📱 Telegram");
+      expect(flat).toContain("📷 Instagram");
+      expect(flat).toContain("📧 Email");
+    });
+
+    it("contact edit telegram sets state and shows current value", async () => {
+      const bot = createBot();
+      registerAdminSections(bot);
+      const handler = getActionHandler(`${C.ADM_CONTACT_EDIT_PREFIX}telegram`);
+      expect(handler).toBeDefined();
+      const ctx = createCtx(`${C.ADM_CONTACT_EDIT_PREFIX}telegram`);
+      await handler!(ctx);
+      expect(userState.setState).toHaveBeenCalledWith(999, { type: "awaiting_edit_contact_telegram" });
+      expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("teacher"));
     });
   });
 

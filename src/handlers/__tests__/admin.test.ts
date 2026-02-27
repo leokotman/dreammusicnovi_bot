@@ -42,6 +42,7 @@ jest.mock("../../content/loader", () => ({
   getAllFaqKeys: jest.fn().mockReturnValue([]),
   getLesson: jest.fn(),
   getFaq: jest.fn(),
+  setContactOverride: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("../../state/userState", () => ({
@@ -256,6 +257,31 @@ describe("handleAdminEdit", () => {
     expect(adminsModule.addAdmin).toHaveBeenCalledWith(99999);
     expect(botCommandsModule.setCommandsForNewAdmin).toHaveBeenCalledWith(99999);
     expect(reply).toHaveBeenCalledWith("Пользователь 99999 добавлен в админы.");
+  });
+
+  it("handles awaiting_edit_contact_telegram: calls setContactOverride", async () => {
+    getState.mockReturnValue({ type: "awaiting_edit_contact_telegram" });
+    const result = await handleAdminEdit(userId, "  new_teacher  ", reply);
+    expect(result).toBe(true);
+    expect(loader.setContactOverride).toHaveBeenCalledWith("telegramUsername", "new_teacher");
+    expect(clearState).toHaveBeenCalledWith(userId);
+    expect(reply).toHaveBeenCalledWith("Telegram username обновлён.");
+  });
+
+  it("handles awaiting_edit_contact_instagram: calls setContactOverride", async () => {
+    getState.mockReturnValue({ type: "awaiting_edit_contact_instagram" });
+    const result = await handleAdminEdit(userId, "https://instagram.com/new", reply);
+    expect(result).toBe(true);
+    expect(loader.setContactOverride).toHaveBeenCalledWith("instagramUrl", "https://instagram.com/new");
+    expect(reply).toHaveBeenCalledWith("Ссылка на Instagram обновлена.");
+  });
+
+  it("handles awaiting_edit_contact_email: calls setContactOverride", async () => {
+    getState.mockReturnValue({ type: "awaiting_edit_contact_email" });
+    const result = await handleAdminEdit(userId, "new@example.com", reply);
+    expect(result).toBe(true);
+    expect(loader.setContactOverride).toHaveBeenCalledWith("email", "new@example.com");
+    expect(reply).toHaveBeenCalledWith("Email обновлён.");
   });
 
   it("returns false for unhandled state type (fallthrough)", async () => {

@@ -7,6 +7,7 @@ import { getSavedContent, setSavedContent } from "./state";
 import { LESSON_KEYS, FIXED_LESSON_LABELS } from "./constants";
 import { slugFromLabel } from "./slug";
 import { getAllLessonKeys, getAllFaqKeys } from "./keys";
+import { sanitizeForDb } from "../utils/sanitize";
 
 function hiddenLessonKeys(): string[] {
   return getSavedContent().hiddenLessonKeys ?? [];
@@ -27,7 +28,7 @@ export async function setSavedLessonContent(key: string, html: string): Promise<
   const data = await loadSavedContent();
   const current = data ?? {};
   const lessons = { ...(current.lessons ?? {}) };
-  lessons[key] = html;
+  lessons[key] = sanitizeForDb(html);
   const next = { ...current, lessons };
   setSavedContent(next);
   await saveSavedContent(next);
@@ -37,7 +38,7 @@ export async function setSavedLessonContent(key: string, html: string): Promise<
 export async function setSavedLessonLabel(key: string, label: string): Promise<void> {
   const data = await loadSavedContent();
   const current = data ?? {};
-  const labels = { ...(current.lessonLabelOverrides ?? {}), [key]: label.trim() };
+  const labels = { ...(current.lessonLabelOverrides ?? {}), [key]: sanitizeForDb(label) };
   const next = { ...current, lessonLabelOverrides: labels };
   setSavedContent(next);
   await saveSavedContent(next);
@@ -48,8 +49,8 @@ export async function addCustomLesson(label: string, content: string): Promise<s
   const key = slugFromLabel(label, getAllLessonKeys(), getAllFaqKeys());
   const data = await loadSavedContent();
   const current = data ?? {};
-  const labels = { ...(current.customLessonLabels ?? {}), [key]: label };
-  const lessons = { ...(current.lessons ?? {}), [key]: content };
+  const labels = { ...(current.customLessonLabels ?? {}), [key]: sanitizeForDb(label) };
+  const lessons = { ...(current.lessons ?? {}), [key]: sanitizeForDb(content) };
   const next = { ...current, customLessonLabels: labels, lessons };
   setSavedContent(next);
   await saveSavedContent(next);

@@ -15,6 +15,7 @@ import {
 } from "../../../content/loader";
 import { setState } from "../../../state/userState";
 import { withErrorHandling } from "../../../middleware/errorHandler";
+import { getContact } from "../../../config/contact";
 import * as C from "../constants";
 import * as M from "../menus";
 
@@ -42,6 +43,12 @@ export function registerAdminSections(bot: AdminBot): void {
         buttons.unshift([Markup.button.callback("📝 Темы", C.ADM_LESSONS)]);
       } else if (key === "ask") {
         buttons.unshift([Markup.button.callback("❓ Вопросы", C.ADM_FAQ)]);
+      } else if (key === "contact") {
+        buttons.unshift(
+          [Markup.button.callback("📱 Telegram", `${C.ADM_CONTACT_EDIT_PREFIX}telegram`)],
+          [Markup.button.callback("📷 Instagram", `${C.ADM_CONTACT_EDIT_PREFIX}instagram`)],
+          [Markup.button.callback("📧 Email", `${C.ADM_CONTACT_EDIT_PREFIX}email`)],
+        );
       } else if (isSectionNested(key)) {
         buttons.unshift([Markup.button.callback("📋 Подпункты", `${C.ADM_SECTION_SUB_PREFIX}list:${key}`)]);
       }
@@ -119,6 +126,43 @@ export function registerAdminSections(bot: AdminBot): void {
           ...M.getAdminMainMenuSubmenu(),
         }
       );
+    });
+  });
+
+  bot.action(new RegExp(`^${C.ADM_CONTACT_EDIT_PREFIX}(telegram|instagram|email)$`), async (ctx) => {
+    if (!M.canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const field = data.slice(C.ADM_CONTACT_EDIT_PREFIX.length) as "telegram" | "instagram" | "email";
+    const contact = getContact();
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      if (field === "telegram") {
+        setState(ctx.from!.id, { type: "awaiting_edit_contact_telegram" });
+        await ctx.editMessageText(
+          "Отправьте в следующем сообщении новый <b>Telegram username</b> (без @).",
+          { parse_mode: "HTML" }
+        );
+        await ctx.reply(`Текущее: ${contact.telegramUsername || "—"}`);
+      } else if (field === "instagram") {
+        setState(ctx.from!.id, { type: "awaiting_edit_contact_instagram" });
+        await ctx.editMessageText(
+          "Отправьте в следующем сообщении новую ссылку на <b>Instagram</b> (https://...).",
+          { parse_mode: "HTML" }
+        );
+        await ctx.reply(`Текущая: ${contact.instagramUrl || "—"}`);
+      } else if (field === "email") {
+        setState(ctx.from!.id, { type: "awaiting_edit_contact_email" });
+        await ctx.editMessageText(
+          "Отправьте в следующем сообщении новый <b>Email</b>.",
+          { parse_mode: "HTML" }
+        );
+        await ctx.reply(`Текущий: ${contact.email || "—"}`);
+      }
     });
   });
 }

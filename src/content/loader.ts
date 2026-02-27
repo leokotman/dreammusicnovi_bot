@@ -100,3 +100,5 @@ export {
   removeHiddenFaqKey,
   getHiddenFaqKeys,
 } from "./faq";
+
+export { setContactOverride, type ContactField } from "./contact";
