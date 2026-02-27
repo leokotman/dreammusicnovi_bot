@@ -18,16 +18,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === "GET" && req.query.set) {
     const secret = process.env.WEBHOOK_SET_SECRET;
     if (secret && req.query.set === secret) {
-      const base = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.VERCEL_BRANCH_URL;
-      if (base) {
-        const url = `${base}/api/webhook`;
+      // Use the Host header so the webhook is set to the URL you actually opened (e.g. production domain).
+      const host = req.headers.host;
+      if (host) {
+        const url = `https://${host}/api/webhook`;
         await getBot().telegram.setWebhook(url);
         return res.status(200).send(`Webhook set to ${url}`);
       }
     }
-    return res.status(400).send("Missing VERCEL_URL or wrong secret");
+    return res.status(400).send("Missing Host header or wrong secret");
   }
 
   if (req.method !== "POST") {
