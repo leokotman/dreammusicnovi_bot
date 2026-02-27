@@ -1,6 +1,6 @@
 # Manual test checklist — DreamMusic Bot
 
-Use this list to verify the bot after changes. Test as a **regular user** and (where marked) as **teacher** (account with `TEACHER_USER_ID`).
+Use this list to verify the bot after changes. Test as a **regular user** and (where marked) as **teacher** (account with `TEACHER_USER_ID`). Button labels and in-bot text are in Russian.
 
 ---
 
@@ -8,9 +8,9 @@ Use this list to verify the bot after changes. Test as a **regular user** and (w
 
 | # | Action | Expected |
 |---|--------|----------|
-| 1.1 | Send `/start` | Main menu appears with 3 buttons: Об уроках, Задать вопрос, Связаться с преподавателем. |
-| 1.2 | Send `/help` | Same main menu + short help text. |
-| 1.3 | Send any other text (e.g. "hello") | Reply with “Используйте меню ниже…” and main menu. |
+| 1.1 | Send `/start` | Main menu with 3 buttons: Об уроках, Задать вопрос, Связаться с преподавателем. |
+| 1.2 | Send `/help` | Same main menu plus short help text. |
+| 1.3 | Send any other text (e.g. "hello") | Reply with “Используйте меню ниже…” (or similar) and main menu. |
 
 ---
 
@@ -48,8 +48,8 @@ Use this list to verify the bot after changes. Test as a **regular user** and (w
 | 4.1 | Задать вопрос → tap **Я уже слишком взрослый?** | FAQ answer + “◀️ Назад”. |
 | 4.2 | Tap **◀️ Назад** (from FAQ answer) | Back to ask list (4 FAQ + Задать свой вопрос + В главное меню). |
 | 4.3 | Open each of the other 3 FAQ questions | Each shows the right answer and “◀️ Назад”. |
-| 4.4 | Tap **✏️ Задать свой вопрос** | Message: “Отправьте ваш вопрос в следующем сообщении…” + “◀️ Назад к меню”. |
-| 4.5 | Send a text message (e.g. “Когда можно начать?”) | Reply: “Ваш вопрос отправлен преподавателю…” + main menu. |
+| 4.4 | Tap **✏️ Задать свой вопрос** | Message: “Отправьте ваш вопрос в следующем сообщении…” (or similar) + “◀️ Назад к меню”. |
+| 4.5 | Send a text message (e.g. “Когда можно начать?”) | Reply: “Ваш вопрос отправлен преподавателю…” (or similar) + main menu. |
 | 4.6 | (If `TEACHER_CHAT_ID` is set) Check teacher chat | Same question appears: “Новый вопрос от … :” + your text. |
 | 4.7 | Tap **◀️ Назад к меню** (from “Задать свой вопрос” screen) | Back to main menu. |
 
@@ -70,18 +70,18 @@ Use an account whose ID is in `TEACHER_USER_ID` or `DEV_ID`. Only `TEACHER_CHAT_
 
 | # | Action | Expected |
 |---|--------|----------|
-| 6.1 | Send `/admin` | Reply with list of `/edit_lesson` and `/edit_faq` commands. |
-| 6.2 | Send `/edit_lesson price` | Bot asks to send new HTML content for “price”. |
-| 6.3 | Send a new text (e.g. “<b>Новая цена</b>”) | Reply “Раздел «price» обновлён.” |
+| 6.1 | Send `/admin` | Reply with clickable admin menu (edit “Об уроках” / “Задать вопрос”). |
+| 6.2 | Use admin menu to edit a lesson (e.g. Стоимость) | Bot asks to send new content and shows current text. |
+| 6.3 | Send new text (e.g. “<b>Новая цена</b>”) | Reply like “Раздел «price» обновлён.” (or similar). |
 | 6.4 | Open Об уроках → Стоимость | Updated “price” content is shown. |
-| 6.5 | Send `/edit_faq amITooOld` | Bot asks for new content. |
-| 6.6 | Send new text | Reply “Ответ «amITooOld» обновлён.” |
+| 6.5 | Use admin menu to edit a FAQ (e.g. amITooOld) | Bot asks for new content. |
+| 6.6 | Send new text | Reply like “Ответ «amITooOld» обновлён.” (or similar). |
 | 6.7 | Задать вопрос → Я уже слишком взрослый? | Updated FAQ answer is shown. |
 | 6.8 | (Optional) Check `data/overrides.json` | File exists and contains your overrides. |
 
-**Non-admin:** From an account that is not in `TEACHER_USER_ID` or `DEV_ID`, send `/admin` or `/edit_lesson price`. Bot does nothing (no reply).
+**Non-admin:** From an account that is not in `TEACHER_USER_ID` or `DEV_ID`, send `/admin` or try to edit. Bot does nothing (no reply).
 
-**Note:** If /admin is set in BotFather with scope **“Group administrators”**, it only appears in groups, not in private chats. For the teacher to see /admin in a 1:1 chat: BotFather → Set Commands → choose scope **Default** (private chats) → add `admin - Админ` there. The bot still only responds to /admin for TEACHER_USER_ID and DEV_ID.
+**BotFather:** If `/admin` is set with scope “Group administrators”, it only appears in groups. For the teacher to see `/admin` in a 1:1 chat: BotFather → Set Commands → scope **Default** (private chats) → add `admin - Админ`. The bot still only responds to `/admin` for admins.
 
 ---
 
@@ -89,7 +89,7 @@ Use an account whose ID is in `TEACHER_USER_ID` or `DEV_ID`. Only `TEACHER_CHAT_
 
 | # | Action | Expected |
 |---|--------|----------|
-| 7.1 | Send 5+ text messages within 1 minute (e.g. “a”, “b”, “c”, “d”, “e”) | After the 5th (or 6th), reply: “Слишком много сообщений. Подождите минуту…” |
+| 7.1 | Send 5+ text messages within 1 minute (e.g. “a”, “b”, “c”, “d”, “e”) | After the 5th (or 6th), reply like “Слишком много сообщений. Подождите минуту…” (or similar). |
 | 7.2 | Tap only buttons (no text) many times | No rate limit; navigation works. |
 | 7.3 | Wait ~1 minute, send text again | Normal reply (menu or “question sent”). |
 
@@ -112,8 +112,4 @@ Use an account whose ID is in `TEACHER_USER_ID` or `DEV_ID`. Only `TEACHER_CHAT_
 2. Об уроках → Вокал → Назад → В главное меню.
 3. Задать вопрос → Задать свой вопрос → send “Test” → see thank-you (and teacher gets it if configured).
 4. Связаться с преподавателем → Назад.
-5. (Teacher) `/admin` → see command list.
-
----
-
-*Later: add unit tests for loader, menus, handlers, and rate limit.*
+5. (Teacher) `/admin` → see admin menu.

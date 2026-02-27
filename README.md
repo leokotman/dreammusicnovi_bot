@@ -1,90 +1,93 @@
 # DreamMusic Bot
 
-Телеграм-бот для преподавателя музыки (вокал, фортепиано): информация об уроках, ответы на вопросы и контакты. Всё на русском, без AI — только готовые ответы и пересылка вопросов преподавателю.
+A Telegram bot for a music teacher (vocal, piano): lesson info, FAQ answers, and contact links. The bot’s buttons and user-facing text are in Russian; no AI — static answers and forwarding questions to the teacher.
 
-## Стек
+## Stack
 
 - **Node.js** + **TypeScript**
 - **Telegraf.js** (long polling)
-- Контент в HTML-файлах (`content/lessons/`, `content/faq/`), правки преподавателя — в `data/overrides.json`
+- Content from HTML files (`content/lessons/`, `content/faq/`); teacher edits stored in `data/overrides.json`
 
-## Установка и запуск
+## Setup and run
 
-1. Создайте бота в [@BotFather](https://t.me/BotFather) и скопируйте токен.
-2. Скопируйте `.env.example` в `.env` и заполните:
-   - `BOT_TOKEN` (обязательно)
-   - `TEACHER_CHAT_ID` — куда пересылать вопросы (chat ID преподавателя)
-   - `TEACHER_USER_ID` — кто может редактировать контент через /admin (обычно тот же ID)
-   - при необходимости: `TEACHER_TELEGRAM`, `TEACHER_INSTAGRAM`, `TEACHER_EMAIL`
-3. Запуск:
+1. Create a bot in [@BotFather](https://t.me/BotFather) and copy the token.
+2. Copy `.env.example` to `.env` and set:
+   - `BOT_TOKEN` (required)
+   - `TEACHER_CHAT_ID` — where to forward “ask your question” messages (teacher’s chat ID)
+   - `TEACHER_USER_ID` — who can edit content via `/admin` (usually the same ID)
+   - Optional: `TEACHER_TELEGRAM`, `TEACHER_INSTAGRAM`, `TEACHER_EMAIL`
+3. Run:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Для продакшена: `npm run build` и `npm start`.
+For production: `npm run build` then `npm start`.
 
 ## Testing the bot
 
 1. Create `.env` from `.env.example` and set at least `BOT_TOKEN`.
 2. Run the app: `npm run dev` (or `npm run build` then `npm start`). Keep the terminal open.
-3. In Telegram, find your bot (by username from BotFather) and send `/start`. You should see the main menu with buttons.
-4. To test **forwarding** “ask your question”: set `TEACHER_CHAT_ID` to your own numeric ID (get it by messaging [@userinfobot](https://t.me/userinfobot) or [@getidsbot](https://t.me/getidsbot)). Then use “Задать вопрос” → “Задать свой вопрос” and send a message — it should appear in your chat.
-5. To test **admin** editing: set `TEACHER_USER_ID` to the same numeric ID. In the bot, send `/admin`, then e.g. `/edit_lesson price` and send the new text. Check `data/overrides.json` or the “Об уроках” → “Стоимость” screen.
+3. In Telegram, open your bot (by username from BotFather) and send `/start`. You should see the main menu with three buttons.
+4. To test **forwarding**: set `TEACHER_CHAT_ID` to your numeric ID (get it from [@userinfobot](https://t.me/userinfobot) or [@getidsbot](https://t.me/getidsbot)). Use “Задать вопрос” → “Задать свой вопрос” and send a message — it should appear in your chat.
+5. To test **admin** editing: set `TEACHER_USER_ID` to that same numeric ID. Send `/admin`, then use the admin menu to edit a topic and send new text. Check `data/overrides.json` or “Об уроках” → “Стоимость”.
 
-**Note:** `TEACHER_USER_ID` and `TEACHER_CHAT_ID` are **numeric IDs** (e.g. `123456789`), not usernames. Same number works for both when the teacher talks to the bot in a private chat.
+**Note:** `TEACHER_USER_ID` and `TEACHER_CHAT_ID` are **numeric IDs** (e.g. `123456789`), not usernames. The same number works for both when the teacher talks to the bot in a private chat.
 
-### BotFather: почему в меню бота видны только /start и /help
+### BotFather: only /start and /help in the menu
 
-В BotFather команды задаются **по scope (контексту)**. Если для `/admin` выбран scope **«group administrators»**, эта команда показывается только в **группах**, где пользователь — администратор. В **личном чате** с ботом (1:1) этот scope не действует, поэтому преподаватель не видит `/admin` в меню.
+In BotFather, commands are set **per scope**. If `/admin` is set with scope “group administrators”, it only appears in groups where the user is an admin. In a **private chat** with the bot (1:1), that scope does not apply, so the teacher won’t see `/admin` in the menu.
 
-**Что сделать:** в BotFather → ваш бот → **Set Commands** выбрать scope **Default** (или «All private chats») и добавить туда все три команды, например:
+**Fix:** In BotFather → your bot → **Set Commands**, choose scope **Default** (or “All private chats”) and add all three commands, e.g.:
 - `start` — Старт
 - `help` — Помощь
 - `admin` — Админ
 
-Тогда в личном чате с ботом все пользователи увидят все три команды в меню. Бот **отвечает** на `/admin` только админам (из env и из `data/admins.json`); остальные ответа не получат.
+Then everyone sees all three in the menu; the bot **replies** to `/admin` only for admins (from env and `data/admins.json`).
 
-## Переменные окружения
+## Environment variables
 
-| Переменная | Обязательно | Описание |
-|------------|-------------|----------|
-| `BOT_TOKEN` | Да | Токен от BotFather |
-| `TEACHER_CHAT_ID` | Нет | Куда пересылать «задать свой вопрос» (chat ID) |
-| `TEACHER_USER_ID` | Нет | Один из админов (user ID); нужен хотя бы один в env для первого входа |
-| `DEV_ID` | Нет | Ещё один админ (не получает пересланные вопросы) |
-| `ADMIN_IDS` | Нет | Доп. админы через env: через запятую, напр. `123,456` |
-| `TEACHER_TELEGRAM` | Нет | Username в Telegram (без @) |
-| `TEACHER_INSTAGRAM` | Нет | Ссылка на Instagram |
-| `TEACHER_EMAIL` | Нет | Email для контакта |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `BOT_TOKEN` | Yes | Token from BotFather |
+| `TEACHER_CHAT_ID` | No | Where to forward “ask your question” (chat ID) |
+| `TEACHER_USER_ID` | No | One of the admins (user ID); at least one in env for first login |
+| `DEV_ID` | No | Another admin (does not receive forwarded questions) |
+| `ADMIN_IDS` | No | Extra admins in env: comma-separated, e.g. `123,456` |
+| `TEACHER_TELEGRAM` | No | Telegram username (no @) |
+| `TEACHER_INSTAGRAM` | No | Instagram link |
+| `TEACHER_EMAIL` | No | Email for contact |
 
-**Админы из Telegram:** любой текущий админ может отправить `/add_admin`, затем в следующем сообщении — user ID (число). Этот ID сохраняется в `data/admins.json` и даёт права админа без правки .env или сервера.
+**Admins from Telegram:** Any current admin can send `/add_admin`, then in the next message send a user ID (number). That ID is saved to `data/admins.json` and gets admin rights without editing .env or the server.
 
-## Редактирование контента
+## Editing content
 
-- **Разработчик:** правьте HTML в `content/lessons/*.html` и `content/faq/*.html`.
-- **Преподаватель / админ:** в Telegram отправьте боту `/admin` — откроется меню кнопками «Редактировать «Об уроках»» и «Редактировать «Задать вопрос»». Выберите раздел и пункт; под подсказкой покажется текущий сохранённый текст (можно скопировать и править). Отправьте следующее сообщение с новым текстом. Кнопки в боте для пользователей (например, «Я уже слишком взрослый?») заданы в коде и не меняются при редактировании — меняется только текст ответа при нажатии.
+- **Developer:** Edit HTML in `content/lessons/*.html` and `content/faq/*.html`.
+- **Teacher / admin:** In Telegram, send `/admin` to the bot — a menu appears with “Редактировать «Об уроках»” and “Редактировать «Задать вопрос»”. Pick section and item; the bot shows the current saved text (you can copy and edit). Send the next message with the new text. Button labels in the bot (e.g. “Я уже слишком взрослый?”) are fixed in code; only the answer text changes when you edit.
 
-**Куда сохраняются правки:** только в файл **`data/overrides.json`** на той машине, где запущен бот. Файлы в репозитории (`content/lessons/*.html`, `content/faq/*.html`) **не меняются**. При загрузке контента сначала читаются HTML-файлы, затем поверх применяются overrides — приоритет у overrides. Папка `data/` в `.gitignore`, поэтому правки преподавателя не попадают в git; при новом деплое на сервере нужно либо скопировать `data/overrides.json`, либо править контент заново через бота.
+**Where edits are stored:** Only in **`data/overrides.json`** on the machine where the bot runs. Repo HTML files are **not** changed. On load, the bot reads the HTML files and then applies overrides (overrides win). The `data/` folder is in `.gitignore`, so teacher edits are not in git; after a new deploy you may need to copy `data/overrides.json` to the server or edit content again via the bot.
 
-## Ограничение частоты и ошибки
+## Rate limit and errors
 
-- Лимит: **5 текстовых сообщений в минуту** на пользователя (нажатия кнопок меню не считаются).
-- Ошибки в обработчиках логируются, пользователю отправляется сообщение «Произошла ошибка. Попробуйте позже…».
+- **Rate limit:** 5 text messages per user per minute (menu button taps are not counted).
+- **Errors:** Handler errors are logged; the user gets “Произошла ошибка. Попробуйте позже…” (or similar).
 
-## Структура проекта
+## Project structure
 
-- `src/index.ts` — точка входа
-- `src/bot.ts` — инициализация Telegraf и регистрация обработчиков
-- `src/menus/` — главное меню, «Об уроках», «Задать вопрос»
-- `src/handlers/` — команды, callback-кнопки, текст (в т.ч. пересылка вопроса), админ
-- `src/content/loader.ts` — загрузка контента из HTML и overrides
-- `content/lessons/`, `content/faq/` — HTML-файлы с текстами
-- `data/overrides.json` — правки от преподавателя (создаётся при первом редактировании)
-- `src/state/` — состояние пользователя («ожидает ввод вопроса» и т.д.)
-- `src/middleware/` — лимит запросов, обработка ошибок
+- `src/index.ts` — entry point
+- `src/bot.ts` — Telegraf setup and handler registration
+- `src/menus/` — main menu, “Об уроках”, “Задать вопрос”
+- `src/handlers/` — commands, callback buttons, text (including question forwarding), admin
+- `src/content/loader.ts` — load content from HTML and overrides
+- `content/lessons/`, `content/faq/` — HTML files with text
+- `data/overrides.json` — teacher overrides (created on first edit)
+- `src/state/` — user state (“waiting for question text”, etc.)
+- `src/middleware/` — rate limit, error handling
 
-## Хостинг
+## Deployment
 
-Long polling подходит для любого окружения (Railway, Fly.io, Render и т.д.). Укажите `BOT_TOKEN` и при необходимости остальные переменные и запускайте `npm start`.
+The bot uses long polling and does not listen on a port — run it as a **worker / background service**, not as a web app.
+
+- **fps.ms:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) has step-by-step for deploying to fps.ms. Set `BOT_TOKEN` and other variables in the panel.
+- **Docker:** Run locally or on your own server: `docker build -t dreammusic-bot .` then `docker run --env-file .env dreammusic-bot`.
