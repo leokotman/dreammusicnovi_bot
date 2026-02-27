@@ -32,7 +32,7 @@ export async function handleText(ctx: Context): Promise<void> {
     const state = getState(userId);
     if (state?.type === "awaiting_question") {
       clearState(userId);
-      if (!checkTextRateLimit(userId)) {
+      if (!isAdmin(userId.toString()) && !checkTextRateLimit(userId)) {
         await ctx.reply(RATE_LIMIT_MESSAGE);
         return;
       }
@@ -49,8 +49,8 @@ export async function handleText(ctx: Context): Promise<void> {
       return;
     }
 
-    // 3) Any other text: rate limit then show menu
-    if (!checkTextRateLimit(userId)) {
+    // 3) Any other text: rate limit then show menu (admins are not rate limited)
+    if (!isAdmin(userId.toString()) && !checkTextRateLimit(userId)) {
       await ctx.reply(RATE_LIMIT_MESSAGE);
       return;
     }

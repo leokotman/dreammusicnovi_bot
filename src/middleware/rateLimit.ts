@@ -1,10 +1,17 @@
 /**
- * Rate limit: 5 text messages per minute per user.
+ * Rate limit: N text messages per minute per user (N from env RATE_LIMIT_MAX_PER_MINUTE, default 5).
  * Only applied to text messages (not callback_query / button clicks).
+ * Callers should skip this for admins (e.g. in text handler).
  */
 
-const MAX_PER_MINUTE = 5;
 const WINDOW_MS = 60 * 1000;
+
+function getMaxPerMinute(): number {
+  const v = process.env.RATE_LIMIT_MAX_PER_MINUTE;
+  if (v === undefined || v === "") return 5;
+  const n = parseInt(v, 10);
+  return Number.isNaN(n) || n < 1 ? 5 : n;
+}
 
 const timestampsByUser = new Map<number, number[]>();
 
@@ -20,7 +27,7 @@ function prune(userId: number): void {
 export function checkTextRateLimit(userId: number): boolean {
   prune(userId);
   const list = timestampsByUser.get(userId) ?? [];
-  if (list.length >= MAX_PER_MINUTE) return false;
+  if (list.length >= getMaxPerMinute()) return false;
   list.push(Date.now());
   timestampsByUser.set(userId, list);
   return true;
