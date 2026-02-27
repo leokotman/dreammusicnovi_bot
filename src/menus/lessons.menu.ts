@@ -1,26 +1,21 @@
 import { Markup } from "telegraf";
-import type { LessonKey } from "../content/loader";
+import { getAllLessonKeys, getLessonLabel } from "../content/loader";
 import { MAIN } from "./main.menu";
 
 const LESSONS_PREFIX = "lesson:";
 const LESSONS_BACK = "lessons_back";
 
-const LABELS: Record<LessonKey, string> = {
-  price: "Стоимость",
-  howLessonsWork: "Как проходят занятия",
-  vocal: "Вокал",
-  piano: "Фортепиано",
-  exercises: "Упражнения между занятиями",
-};
-
-const topicButtons = (Object.keys(LABELS) as LessonKey[]).map((key) => [
-  Markup.button.callback(LABELS[key], `${LESSONS_PREFIX}${key}`),
-]);
+function getTopicButtons() {
+  const keys = getAllLessonKeys();
+  return keys.map((key) => [
+    Markup.button.callback(getLessonLabel(key), `${LESSONS_PREFIX}${key}`),
+  ]);
+}
 
 /** For the lessons list screen — back goes to main menu */
 export function getLessonsMenu() {
   return Markup.inlineKeyboard([
-    ...topicButtons,
+    ...getTopicButtons(),
     [Markup.button.callback("◀️ В главное меню", MAIN)],
   ]);
 }
@@ -28,21 +23,19 @@ export function getLessonsMenu() {
 /** For a lesson topic screen — back goes to lessons list */
 export function getLessonsMenuForTopic() {
   return Markup.inlineKeyboard([
-    ...topicButtons,
+    ...getTopicButtons(),
     [Markup.button.callback("◀️ Назад", LESSONS_BACK)],
   ]);
 }
 
 export const lessonsMenuMessage = "🎶 <b>Об уроках</b>\n\nВыберите тему:";
 
-export function getLessonLabel(key: LessonKey): string {
-  return LABELS[key];
-}
+export { getLessonLabel };
 
-export function parseLessonCallback(data: string): LessonKey | null {
+export function parseLessonCallback(data: string): string | null {
   if (!data.startsWith(LESSONS_PREFIX)) return null;
-  const key = data.slice(LESSONS_PREFIX.length) as LessonKey;
-  return LABELS[key] !== undefined ? key : null;
+  const key = data.slice(LESSONS_PREFIX.length);
+  return getAllLessonKeys().includes(key) ? key : null;
 }
 
 export { LESSONS_BACK };

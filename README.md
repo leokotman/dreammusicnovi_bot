@@ -6,7 +6,7 @@ A Telegram bot for a music teacher (vocal, piano): lesson info, FAQ answers, and
 
 - **Node.js** + **TypeScript**
 - **Telegraf.js** (long polling)
-- Content from HTML files (`content/lessons/`, `content/faq/`); teacher edits stored in `data/overrides.json`
+- Content from HTML files (`content/lessons/`, `content/faq/`); teacher edits saved to `data/overrides.json` (or Vercel Blob)
 
 ## Setup and run
 
@@ -35,16 +35,16 @@ For production: `npm run build` then `npm start`.
 
 **Note:** `TEACHER_USER_ID` and `TEACHER_CHAT_ID` are **numeric IDs** (e.g. `123456789`), not usernames. The same number works for both when the teacher talks to the bot in a private chat.
 
-### BotFather: only /start and /help in the menu
+### Bot commands: /admin only for admins
 
-In BotFather, commands are set **per scope**. If `/admin` is set with scope “group administrators”, it only appears in groups where the user is an admin. In a **private chat** with the bot (1:1), that scope does not apply, so the teacher won’t see `/admin` in the menu.
+The bot sets its menu commands in code via setMyCommands (see link in docs): default and all private chats get only start and help, so ordinary users never see /admin. If `/admin` is set with scope “group administrators”, it only appears in groups where the user is an admin. In a **private chat** with the bot (1:1), that scope does not apply, so the teacher won’t see `/admin` in the menu.
 
-**Fix:** In BotFather → your bot → **Set Commands**, choose scope **Default** (or “All private chats”) and add all three commands, e.g.:
+**No longer needed:** In BotFather → your bot → **Set Commands**, choose scope **Default** (or “All private chats”) and add all three commands, e.g.:
 - `start` — Старт
 - `help` — Помощь
 - `admin` — Админ
 
-Then everyone sees all three in the menu; the bot **replies** to `/admin` only for admins (from env and `data/admins.json`).
+The bot **now sets commands in code** (on startup and when setting the webhook): non-admins see only `start` and `help`; admins see `start`, `help`, and `admin`. The BotFather step above is optional.
 
 ## Environment variables
 
@@ -66,7 +66,12 @@ Then everyone sees all three in the menu; the bot **replies** to `/admin` only f
 - **Developer:** Edit HTML in `content/lessons/*.html` and `content/faq/*.html`.
 - **Teacher / admin:** In Telegram, send `/admin` to the bot — a menu appears with “Редактировать «Об уроках»” and “Редактировать «Задать вопрос»”. Pick section and item; the bot shows the current saved text (you can copy and edit). Send the next message with the new text. Button labels in the bot (e.g. “Я уже слишком взрослый?”) are fixed in code; only the answer text changes when you edit.
 
-**Where edits are stored:** Only in **`data/overrides.json`** on the machine where the bot runs. Repo HTML files are **not** changed. On load, the bot reads the HTML files and then applies overrides (overrides win). The `data/` folder is in `.gitignore`, so teacher edits are not in git; after a new deploy you may need to copy `data/overrides.json` to the server or edit content again via the bot.
+**Where edits are stored:** On the machine where the bot runs: **`data/overrides.json`** and **`data/admins.json`** (local), or on Vercel **Vercel Blob** when `BLOB_READ_WRITE_TOKEN` is set. Repo HTML files are **not** changed. On load, the bot reads the HTML files and then applies saved content (saved content wins).
+
+## Data persistence and deployments
+
+- **Code vs storage:** Default content (lessons, FAQ) lives in the repo (`content/lessons/`, `content/faq/`). Admin edits, added sections/questions, and added admins live in storage (local `data/` or Vercel Blob). You **do not** need to sync the codebase with the blob — at runtime the app always loads defaults from code and applies saved content from storage. The most recent data is in storage; the code is only the baseline.
+- **New deployments do not wipe data.** Saved content and admins are stored in **Vercel Blob** (or local `data/`). Blob is separate from the deployment: redeploying only updates the serverless code; the same `BLOB_READ_WRITE_TOKEN` and blob store are used, so existing saved content and admins stay. The app never writes to storage on startup — it only reads. Writes happen only when an admin explicitly edits or adds something (and the code always merges with existing data before writing).
 
 ## Rate limit and errors
 
@@ -79,9 +84,9 @@ Then everyone sees all three in the menu; the bot **replies** to `/admin` only f
 - `src/bot.ts` — Telegraf setup and handler registration
 - `src/menus/` — main menu, “Об уроках”, “Задать вопрос”
 - `src/handlers/` — commands, callback buttons, text (including question forwarding), admin
-- `src/content/loader.ts` — load content from HTML and overrides
+- `src/content/loader.ts` — load content from HTML and saved content
 - `content/lessons/`, `content/faq/` — HTML files with text
-- `data/overrides.json` — teacher overrides (created on first edit)
+- `data/overrides.json` — saved content (admin edits; created on first edit)
 - `src/state/` — user state (“waiting for question text”, etc.)
 - `src/middleware/` — rate limit, error handling
 
@@ -89,6 +94,6 @@ Then everyone sees all three in the menu; the bot **replies** to `/admin` only f
 
 The bot uses long polling and does not listen on a port — run it as a **worker / background service**, not as a web app.
 
-- **Vercel** (webhook, free): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Connect GitHub, set env vars, deploy, then open `/api/webhook?set=YOUR_SECRET` once to set the Telegram webhook. No always-on process; teacher overrides do not persist.
+- **Vercel** (webhook, free): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Connect GitHub, set env vars (including `BLOB_READ_WRITE_TOKEN` for persistent saved content and admins), deploy, then open `/api/webhook?set=YOUR_SECRET` once to set the Telegram webhook. No always-on process; saved content and admins persist in Vercel Blob.
 - **Railway** (long polling, paid) or **Render** (long polling, free tier may sleep): same doc. Connect GitHub, set `BOT_TOKEN`, deploy.
 - **Docker:** Run locally or on your own server: `docker build -t dreammusic-bot .` then `docker run --env-file .env dreammusic-bot`.

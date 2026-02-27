@@ -5,6 +5,7 @@ import { registerCommands } from "./handlers/commands";
 import { registerCallbacks } from "./handlers/callbacks";
 import { registerAdmin } from "./handlers/admin";
 import { handleText } from "./handlers/text";
+import { setTelegramForCommands } from "./botCommands";
 
 export function createBot(): Telegraf {
   initContent();
@@ -14,6 +15,7 @@ export function createBot(): Telegraf {
   registerCommands(bot);
   registerCallbacks(bot);
   registerAdmin(bot);
+  setTelegramForCommands(bot.telegram);
 
   bot.on("text", async (ctx, next) => {
     await handleText(ctx);

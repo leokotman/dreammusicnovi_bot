@@ -16,7 +16,7 @@ import {
   getAskMenuForTopic,
   askMenuMessage,
   parseFaqCallback,
-  FAQ_LABELS,
+  getFaqLabel,
   ASK_CUSTOM,
   ASK_BACK,
 } from "../menus/ask.menu";
@@ -102,7 +102,7 @@ export function registerCallbacks(bot: {
       await ctx.answerCbQuery();
       const raw = getFaq(key);
       const content = escapeForTelegramHtml(stripHtml(raw));
-      const breadcrumb = `❓ Задать вопрос → ${FAQ_LABELS[key]}`;
+      const breadcrumb = `❓ Задать вопрос → ${getFaqLabel(key)}`;
       await ctx.editMessageText(`${breadcrumb}\n\n${content}`, {
         parse_mode: "HTML",
         ...getAskMenuForTopic(),

@@ -1,5 +1,5 @@
 /**
- * Persistent storage for overrides and admins.
+ * Persistent storage for saved content (admin edits) and admins.
  * On Vercel (when BLOB_READ_WRITE_TOKEN is set): uses Vercel Blob.
  * Otherwise: uses local files in data/.
  */
@@ -10,16 +10,25 @@ import * as path from "path";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const DATA_DIR = path.join(PROJECT_ROOT, "data");
-const OVERRIDES_PATH = path.join(DATA_DIR, "overrides.json");
+/** File name kept as overrides.json for backward compatibility with existing deployments. */
+const SAVED_CONTENT_PATH = path.join(DATA_DIR, "overrides.json");
 const ADMINS_PATH = path.join(DATA_DIR, "admins.json");
 
 const BLOB_PREFIX = "dreammusic";
-const BLOB_OVERRIDES = `${BLOB_PREFIX}/overrides.json`;
+const BLOB_SAVED_CONTENT = `${BLOB_PREFIX}/overrides.json`;
 const BLOB_ADMINS = `${BLOB_PREFIX}/admins.json`;
 
-export type OverridesData = {
+export type SavedContentData = {
   lessons?: Record<string, string>;
   faq?: Record<string, string>;
+  /** Custom lesson sections (key -> label). Content in lessons. */
+  customLessonLabels?: Record<string, string>;
+  /** Custom FAQ questions (key -> label). Content in faq. */
+  customFaqLabels?: Record<string, string>;
+  /** Saved display label for lesson sections (built-in or custom). */
+  lessonLabelOverrides?: Record<string, string>;
+  /** Saved display label for FAQ questions (built-in or custom). */
+  faqLabelOverrides?: Record<string, string>;
 };
 
 export type AdminsData = { ids: number[] };
@@ -28,31 +37,31 @@ function useBlob(): boolean {
   return typeof process.env.BLOB_READ_WRITE_TOKEN === "string" && process.env.BLOB_READ_WRITE_TOKEN.length > 0;
 }
 
-/** Read overrides from Blob or local file. */
-export async function getOverrides(): Promise<OverridesData | null> {
+/** Load saved content from Blob or local file. */
+export async function loadSavedContent(): Promise<SavedContentData | null> {
   if (useBlob()) {
     try {
-      const result = await get(BLOB_OVERRIDES, { access: "private" });
+      const result = await get(BLOB_SAVED_CONTENT, { access: "private" });
       if (!result || result.statusCode !== 200 || !result.stream) return null;
       const text = await new Response(result.stream).text();
-      return JSON.parse(text) as OverridesData;
+      return JSON.parse(text) as SavedContentData;
     } catch {
       return null;
     }
   }
   try {
-    const raw = fs.readFileSync(OVERRIDES_PATH, "utf-8");
-    return JSON.parse(raw) as OverridesData;
+    const raw = fs.readFileSync(SAVED_CONTENT_PATH, "utf-8");
+    return JSON.parse(raw) as SavedContentData;
   } catch {
     return null;
   }
 }
 
-/** Write overrides to Blob or local file. */
-export async function setOverrides(data: OverridesData): Promise<void> {
+/** Save content to Blob or local file. */
+export async function saveSavedContent(data: SavedContentData): Promise<void> {
   const json = JSON.stringify(data, null, 2);
   if (useBlob()) {
-    await put(BLOB_OVERRIDES, json, {
+    await put(BLOB_SAVED_CONTENT, json, {
       access: "private",
       contentType: "application/json",
       addRandomSuffix: false,
@@ -61,7 +70,7 @@ export async function setOverrides(data: OverridesData): Promise<void> {
     return;
   }
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(OVERRIDES_PATH, json, "utf-8");
+  fs.writeFileSync(SAVED_CONTENT_PATH, json, "utf-8");
 }
 
 /** Read admins from Blob or local file. */

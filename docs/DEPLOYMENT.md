@@ -19,7 +19,7 @@ Set these on the host (same as in `.env` locally; see `.env.example` and README)
 | `DEV_ID`, `ADMIN_IDS` | No | Extra admins |
 | `TEACHER_TELEGRAM`, `TEACHER_INSTAGRAM`, `TEACHER_EMAIL` | No | Contact links in "Связаться" |
 
-For **Vercel** also set **WEBHOOK_SET_SECRET** (optional): a secret string you use once to set the webhook URL (see below). To make admin edits (lesson/FAQ overrides and `/add_admin`) persist, create a **Vercel Blob** store and set **BLOB_READ_WRITE_TOKEN** (see Vercel section below).
+For **Vercel** also set **WEBHOOK_SET_SECRET** (optional): a secret string you use once to set the webhook URL (see below). To make admin edits (saved lesson/FAQ content and `/add_admin`) persist, create a **Vercel Blob** store and set **BLOB_READ_WRITE_TOKEN** (see Vercel section below).
 
 ---
 
@@ -66,9 +66,9 @@ For **Vercel** also set **WEBHOOK_SET_SECRET** (optional): a secret string you u
 
 ---
 
-## Where overrides and admins are stored
+## Where saved content and admins are stored
 
-- **Lesson/FAQ overrides** (edited via `/admin`) and **admins** (added via `/add_admin`) are stored in:
+- **Saved content** (lesson/FAQ edits via `/admin`) and **admins** (added via `/add_admin`) are stored in:
   - **Vercel:** [Vercel Blob](https://vercel.com/docs/storage/vercel-blob) when **BLOB_READ_WRITE_TOKEN** is set (create a Blob store in the dashboard; the token is added automatically). Without it, edits do not persist across requests.
   - **Local / Railway / Render:** `data/overrides.json` and `data/admins.json` on disk. On Railway/Render the filesystem is often ephemeral (lost on redeploy); the teacher can re-edit via `/admin` after a deploy.
 

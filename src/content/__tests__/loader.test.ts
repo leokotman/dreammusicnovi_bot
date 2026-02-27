@@ -5,11 +5,17 @@ import {
   FAQ_KEYS,
   getLesson,
   getFaq,
-  setLessonOverride,
-  setFaqOverride,
-  getOverrides,
+  getLessonLabel,
+  getFaqLabel,
+  setSavedLessonContent,
+  setSavedFaqContent,
+  setSavedLessonLabel,
+  setSavedFaqLabel,
+  getSavedContent,
   initContent,
-  saveOverrides,
+  replaceSavedContent,
+  addCustomLesson,
+  addCustomFaq,
 } from "../loader";
 
 jest.mock("fs");
@@ -17,10 +23,6 @@ jest.mock("fs");
 const mockFs = fs as jest.Mocked<typeof fs>;
 
 describe("loader", () => {
-  const overridesPath = path.join(process.cwd(), "data", "overrides.json");
-  const lessonsDir = path.join(process.cwd(), "content", "lessons");
-  const faqDir = path.join(process.cwd(), "content", "faq");
-
   beforeEach(() => {
     jest.clearAllMocks();
     mockFs.readFileSync.mockImplementation(((p: unknown) => {
@@ -49,47 +51,81 @@ describe("loader", () => {
   });
 
   describe("initContent and getLesson / getFaq", () => {
-    it("getLesson returns file content when no override", () => {
+    it("getLesson returns file content when no saved content", () => {
       initContent();
       expect(getLesson("price")).toBe("<p>lesson content</p>");
     });
 
-    it("getFaq returns file content when no override", () => {
+    it("getFaq returns file content when no saved content", () => {
       initContent();
       expect(getFaq("amITooOld")).toBe("<p>faq content</p>");
     });
 
-    it("setLessonOverride then getLesson returns override", async () => {
+    it("setSavedLessonContent then getLesson returns saved content", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
-      await setLessonOverride("price", "<b>New price</b>");
+      await setSavedLessonContent("price", "<b>New price</b>");
       expect(getLesson("price")).toBe("<b>New price</b>");
     });
 
-    it("setFaqOverride then getFaq returns override", async () => {
+    it("setSavedFaqContent then getFaq returns saved content", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
-      await setFaqOverride("amITooOld", "<b>New answer</b>");
+      await setSavedFaqContent("amITooOld", "<b>New answer</b>");
       expect(getFaq("amITooOld")).toBe("<b>New answer</b>");
     });
   });
 
-  describe("getOverrides", () => {
-    it("returns copy of overrides", () => {
+  describe("getSavedContent", () => {
+    it("returns copy of saved content", () => {
       initContent();
-      const o = getOverrides();
+      const o = getSavedContent();
       expect(o).toEqual({});
-      expect(getOverrides()).not.toBe(o);
+      expect(getSavedContent()).not.toBe(o);
     });
   });
 
-  describe("saveOverrides", () => {
-    it("writes and updates in-memory overrides", async () => {
+  describe("replaceSavedContent", () => {
+    it("writes and updates in-memory saved content", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
-      await saveOverrides({ lessons: { price: "x" } });
+      await replaceSavedContent({ lessons: { price: "x" } });
       expect(getLesson("price")).toBe("x");
       expect(mockFs.writeFileSync).toHaveBeenCalled();
+    });
+  });
+
+  describe("saved labels", () => {
+    it("getLessonLabel returns saved label after setSavedLessonLabel", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      await setSavedLessonLabel("price", "Новая стоимость");
+      expect(getLessonLabel("price")).toBe("Новая стоимость");
+    });
+
+    it("getFaqLabel returns saved label after setSavedFaqLabel", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      await setSavedFaqLabel("amITooOld", "Мне уже поздно начинать?");
+      expect(getFaqLabel("amITooOld")).toBe("Мне уже поздно начинать?");
+    });
+  });
+
+  describe("slugFromLabel (Cyrillic to Latin)", () => {
+    it("produces Latin-only key from Russian label", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      const key = await addCustomLesson("Стоимость", "content");
+      expect(key).toMatch(/^[a-z0-9_]+$/);
+      expect(key).toBe("stoimost");
+    });
+
+    it("produces Latin-only key from Russian FAQ label", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      const key = await addCustomFaq("Как часто заниматься?", "answer");
+      expect(key).toMatch(/^[a-z0-9_]+$/);
+      expect(key).toBe("kak_chasto_zanimatsya");
     });
   });
 });

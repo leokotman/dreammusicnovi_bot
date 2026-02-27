@@ -1,5 +1,5 @@
 import * as fs from "fs";
-import { loadAdmins, isAdmin, addAdmin, hasAnyAdmin } from "../admins";
+import { loadAdmins, isAdmin, addAdmin, hasAnyAdmin, getAdminIds } from "../admins";
 
 jest.mock("fs");
 
@@ -24,6 +24,7 @@ describe("admins", () => {
       expect(isAdmin("3")).toBe(true);
       expect(isAdmin("4")).toBe(false);
       expect(hasAnyAdmin()).toBe(true);
+      expect(getAdminIds().sort()).toEqual([1, 2, 3]);
     });
 
     it("hasAnyAdmin is false when empty", () => {
@@ -44,6 +45,25 @@ describe("admins", () => {
       mockFs.readFileSync.mockReturnValue("not json");
       expect(() => loadAdmins(["1"])).not.toThrow();
       expect(isAdmin("1")).toBe(true);
+    });
+  });
+
+  describe("getAdminIds", () => {
+    it("returns empty array when no admins loaded", () => {
+      loadAdmins([]);
+      expect(getAdminIds()).toEqual([]);
+    });
+
+    it("returns numeric ids in insertion order after loadAdmins", () => {
+      loadAdmins(["10", "20", "5"]);
+      expect(getAdminIds()).toEqual([10, 20, 5]);
+    });
+
+    it("includes new admin id after addAdmin", async () => {
+      loadAdmins(["1"]);
+      await addAdmin(99);
+      const ids = getAdminIds().sort((a, b) => a - b);
+      expect(ids).toEqual([1, 99]);
     });
   });
 

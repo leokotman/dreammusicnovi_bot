@@ -8,8 +8,14 @@ const TTL_MS = 10 * 60 * 1000; // 10 minutes
 export type PendingState =
   | { type: "awaiting_question" }
   | { type: "awaiting_edit_lesson"; key: string }
+  | { type: "awaiting_edit_lesson_label"; key: string }
   | { type: "awaiting_edit_faq"; key: string }
-  | { type: "awaiting_add_admin" };
+  | { type: "awaiting_edit_faq_label"; key: string }
+  | { type: "awaiting_add_admin" }
+  | { type: "awaiting_new_lesson_label" }
+  | { type: "awaiting_new_lesson_content"; label: string }
+  | { type: "awaiting_new_faq_label" }
+  | { type: "awaiting_new_faq_content"; label: string };
 
 const store = new Map<number, { state: PendingState; at: number }>();
 

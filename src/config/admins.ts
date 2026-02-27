@@ -51,6 +51,13 @@ export function isAdmin(userId: string): boolean {
   return idSet.has(userId);
 }
 
+/** Numeric admin IDs (for setMyCommands scope per chat). */
+export function getAdminIds(): number[] {
+  return Array.from(idSet)
+    .map((s) => parseInt(s, 10))
+    .filter((n) => !Number.isNaN(n));
+}
+
 export function hasAnyAdmin(): boolean {
   return idSet.size > 0;
 }

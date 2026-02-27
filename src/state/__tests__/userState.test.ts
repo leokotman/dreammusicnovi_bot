@@ -26,6 +26,16 @@ describe("userState", () => {
     expect(getState(userId)).toEqual({ type: "awaiting_edit_faq", key: "amITooOld" });
   });
 
+  it("returns set state for awaiting_edit_lesson_label", () => {
+    setState(userId, { type: "awaiting_edit_lesson_label", key: "price" });
+    expect(getState(userId)).toEqual({ type: "awaiting_edit_lesson_label", key: "price" });
+  });
+
+  it("returns set state for awaiting_edit_faq_label", () => {
+    setState(userId, { type: "awaiting_edit_faq_label", key: "amITooOld" });
+    expect(getState(userId)).toEqual({ type: "awaiting_edit_faq_label", key: "amITooOld" });
+  });
+
   it("returns set state for awaiting_add_admin", () => {
     setState(userId, { type: "awaiting_add_admin" });
     expect(getState(userId)).toEqual({ type: "awaiting_add_admin" });

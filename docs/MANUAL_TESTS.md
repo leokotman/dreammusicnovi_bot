@@ -77,7 +77,7 @@ Use an account whose ID is in `TEACHER_USER_ID` or `DEV_ID`. Only `TEACHER_CHAT_
 | 6.5 | Use admin menu to edit a FAQ (e.g. amITooOld) | Bot asks for new content. |
 | 6.6 | Send new text | Reply like “Ответ «amITooOld» обновлён.” (or similar). |
 | 6.7 | Задать вопрос → Я уже слишком взрослый? | Updated FAQ answer is shown. |
-| 6.8 | (Optional) Check `data/overrides.json` | File exists and contains your overrides. |
+| 6.8 | (Optional) Check `data/overrides.json` | File exists and contains your saved content. |
 
 **Non-admin:** From an account that is not in `TEACHER_USER_ID` or `DEV_ID`, send `/admin` or try to edit. Bot does nothing (no reply).
 
@@ -102,7 +102,7 @@ Use an account whose ID is in `TEACHER_USER_ID` or `DEV_ID`. Only `TEACHER_CHAT_
 | 8.1 | Tap the same menu button twice in a row (e.g. Об уроках twice) | No crash; no “Произошла ошибка” to user. |
 | 8.2 | After “Задать свой вопрос”, send a message | Question is forwarded (if `TEACHER_CHAT_ID` set) and thank-you message is shown; no duplicate sends. |
 | 8.3 | Send a very long message as “your question” | Forwarded as-is (or truncated by Telegram); no crash. |
-| 8.4 | **Restart:** Stop the server (Ctrl+C), run `npm run dev` again, then in Telegram send `/start` | Main menu appears with current content (and overrides if any). |
+| 8.4 | **Restart:** Stop the server (Ctrl+C), run `npm run dev` again, then in Telegram send `/start` | Main menu appears with current content (and saved content if any). |
 
 ---
 
