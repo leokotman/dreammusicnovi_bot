@@ -29,6 +29,7 @@ jest.mock("../../content/loader", () => ({
   getHiddenSectionIds: jest.fn().mockReturnValue([]),
   getHiddenLessonKeys: jest.fn().mockReturnValue([]),
   getHiddenFaqKeys: jest.fn().mockReturnValue([]),
+  getVisibleSectionIds: jest.fn().mockReturnValue([]),
   getSections: jest.fn().mockReturnValue([]),
   getSectionSubIds: jest.fn().mockReturnValue([]),
   getSectionSubItem: jest.fn().mockReturnValue(null),

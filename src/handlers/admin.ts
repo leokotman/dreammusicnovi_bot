@@ -14,6 +14,7 @@ import {
   getLessonLabel,
   getFaqLabel,
   getSectionLabel,
+  getVisibleSectionIds,
   getSections,
   getSectionSubIds,
   getSectionSubItem,
@@ -96,9 +97,7 @@ function truncateForPreview(text: string): string {
 
 function getAdminMainMenu() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("📋 Редактировать главное меню", ADM_MAIN_MENU)],
-    [Markup.button.callback("📝 Редактировать «Об уроках»", ADM_LESSONS)],
-    [Markup.button.callback("❓ Редактировать «Задать вопрос»", ADM_FAQ)],
+    [Markup.button.callback("📋 Редактировать разделы (содержание и подразделы)", ADM_MAIN_MENU)],
     [Markup.button.callback("↩️ Восстановить удалённые разделы", ADM_RESTORE)],
   ]);
 }
@@ -138,9 +137,9 @@ function getAdminRestoreMessage(): string {
 }
 
 function getAdminMainMenuSubmenu() {
-  const sections = getSections();
-  const sectionButtons = sections.map((s) =>
-    Markup.button.callback(s.label, `${ADM_SECTION_PREFIX}${s.key}`)
+  const visibleIds = getVisibleSectionIds();
+  const sectionButtons = visibleIds.map((id) =>
+    Markup.button.callback(getSectionLabel(id), `${ADM_SECTION_PREFIX}${id}`)
   );
   return Markup.inlineKeyboard([
     ...sectionButtons.map((b) => [b]),
@@ -157,7 +156,7 @@ function getAdminLessonsMenu() {
   return Markup.inlineKeyboard([
     ...buttons.map((b) => [b]),
     [Markup.button.callback("➕ Добавить раздел", ADM_ADD_LESSON)],
-    [Markup.button.callback("◀️ Назад", ADM_MAIN)],
+    [Markup.button.callback("◀️ Назад к разделам", ADM_MAIN_MENU)],
   ]);
 }
 
@@ -169,7 +168,7 @@ function getAdminFaqMenu() {
   return Markup.inlineKeyboard([
     ...buttons.map((b) => [b]),
     [Markup.button.callback("➕ Добавить вопрос", ADM_ADD_FAQ)],
-    [Markup.button.callback("◀️ Назад", ADM_MAIN)],
+    [Markup.button.callback("◀️ Назад к разделам", ADM_MAIN_MENU)],
   ]);
 }
 
@@ -219,7 +218,7 @@ export function registerAdmin(bot: {
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
       await ctx.editMessageText(
-        "<b>Главное меню</b>\n\nРедактируйте названия пунктов или добавьте новый раздел:",
+        "<b>Разделы</b>\n\nВыберите раздел для редактирования (название, подразделы) или добавьте новый:",
         {
           parse_mode: "HTML",
           ...getAdminMainMenuSubmenu(),
@@ -315,9 +314,7 @@ export function registerAdmin(bot: {
     const data = cq && "data" in cq ? cq.data : undefined;
     if (!data) return;
     const key = data.slice(ADM_SECTION_PREFIX.length);
-    const sections = getSections();
-    const section = sections.find((s) => s.key === key);
-    if (!section) return;
+    const label = getSectionLabel(key);
     const hidden = getHiddenSectionIds().includes(key);
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
@@ -327,11 +324,15 @@ export function registerAdmin(bot: {
           ? [Markup.button.callback("↩️ Вернуть в меню", `${ADM_RESTORE_SECTION_PREFIX}${key}`)]
           : [Markup.button.callback("🗑 Удалить из главного меню", `${ADM_DEL_SECTION_PREFIX}${key}`)],
       ];
-      if (isSectionNested(key)) {
+      if (key === "lessons") {
+        buttons.unshift([Markup.button.callback("📝 Темы (подразделы)", ADM_LESSONS)]);
+      } else if (key === "ask") {
+        buttons.unshift([Markup.button.callback("❓ Вопросы (подразделы)", ADM_FAQ)]);
+      } else if (isSectionNested(key)) {
         buttons.unshift([Markup.button.callback("📋 Подпункты", `${ADM_SECTION_SUB_PREFIX}list:${key}`)]);
       }
       buttons.push([Markup.button.callback("◀️ Назад", ADM_MAIN_MENU)]);
-      await ctx.editMessageText(`Пункт «${section.label}». Что сделать?`, {
+      await ctx.editMessageText(`Пункт «${label}». Что сделать?`, {
         parse_mode: "HTML",
         ...Markup.inlineKeyboard(buttons),
       });
@@ -600,7 +601,8 @@ export function registerAdmin(bot: {
     }
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
-      await ctx.editMessageText("Выберите раздел для редактирования:", {
+      const sectionLabel = getSectionLabel("lessons");
+      await ctx.editMessageText(`<b>Темы раздела «${sectionLabel}»</b>\n\nВыберите тему для редактирования:`, {
         parse_mode: "HTML",
         ...getAdminLessonsMenu(),
       });
@@ -711,7 +713,8 @@ export function registerAdmin(bot: {
     }
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
-      await ctx.editMessageText("Выберите ответ для редактирования:", {
+      const sectionLabel = getSectionLabel("ask");
+      await ctx.editMessageText(`<b>Вопросы раздела «${sectionLabel}»</b>\n\nВыберите вопрос для редактирования:`, {
         parse_mode: "HTML",
         ...getAdminFaqMenu(),
       });
