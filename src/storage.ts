@@ -42,6 +42,12 @@ export type SavedContentData = {
   >;
   /** Order of custom main section keys for display. */
   customMainSectionOrder?: string[];
+  /** Lesson topic keys to hide from «Об уроках» (fixed or custom). */
+  hiddenLessonKeys?: string[];
+  /** FAQ question keys to hide from «Задать вопрос». */
+  hiddenFaqKeys?: string[];
+  /** Main section ids to hide from main menu (e.g. "lessons", "ask", "contact"). */
+  hiddenMainSectionIds?: string[];
 };
 
 export type AdminsData = { ids: number[] };

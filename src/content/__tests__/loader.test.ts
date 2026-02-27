@@ -28,6 +28,24 @@ import {
   addCustomMainSection,
   createCustomMainSectionNested,
   addCustomMainSectionSubItem,
+  removeCustomMainSection,
+  removeCustomMainSectionSubItem,
+  setSavedCustomMainSectionLabel,
+  getAllLessonKeys,
+  getAllFaqKeys,
+  addHiddenLessonKey,
+  removeCustomLesson,
+  removeHiddenLessonKey,
+  addHiddenFaqKey,
+  removeCustomFaq,
+  removeHiddenFaqKey,
+  addHiddenMainSectionId,
+  removeHiddenMainSectionId,
+  getHiddenMainSectionIds,
+  getHiddenLessonKeys,
+  getHiddenFaqKeys,
+  isLessonKeyFixed,
+  isFaqKeyFixed,
 } from "../loader";
 
 jest.mock("fs");
@@ -193,6 +211,95 @@ describe("loader", () => {
       expect(ids[3]).toMatch(/^main_/);
     });
 
+    it("getAllLessonKeys excludes hiddenLessonKeys", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      expect(getAllLessonKeys()).toContain("vocal");
+      await addHiddenLessonKey("vocal");
+      expect(getAllLessonKeys()).not.toContain("vocal");
+    });
+
+    it("getMainMenuSectionIds excludes hiddenMainSectionIds", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      expect(getMainMenuSectionIds()).toContain("lessons");
+      await addHiddenMainSectionId("lessons");
+      expect(getMainMenuSectionIds()).not.toContain("lessons");
+    });
+
+    it("getHiddenMainSectionIds and removeHiddenMainSectionId restore main section", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      await addHiddenMainSectionId("contact");
+      expect(getHiddenMainSectionIds()).toContain("contact");
+      await removeHiddenMainSectionId("contact");
+      expect(getHiddenMainSectionIds()).not.toContain("contact");
+      expect(getMainMenuSectionIds()).toContain("contact");
+    });
+
+    it("getHiddenLessonKeys and removeHiddenLessonKey restore lesson topic", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      await addHiddenLessonKey("vocal");
+      expect(getHiddenLessonKeys()).toContain("vocal");
+      await removeHiddenLessonKey("vocal");
+      expect(getHiddenLessonKeys()).not.toContain("vocal");
+      expect(getAllLessonKeys()).toContain("vocal");
+    });
+
+    it("getHiddenFaqKeys and removeHiddenFaqKey restore FAQ question", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      await addHiddenFaqKey("amITooOld");
+      expect(getHiddenFaqKeys()).toContain("amITooOld");
+      await removeHiddenFaqKey("amITooOld");
+      expect(getHiddenFaqKeys()).not.toContain("amITooOld");
+      expect(getAllFaqKeys()).toContain("amITooOld");
+    });
+
+    it("removeCustomLesson removes custom lesson only", async () => {
+      initContent();
+      let overridesJson = "{}";
+      mockFs.readFileSync.mockImplementation((p: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) return overridesJson;
+        if (pathStr.includes("lessons")) return "<p>lesson content</p>";
+        if (pathStr.includes("faq")) return "<p>faq content</p>";
+        throw new Error("file not found");
+      });
+      mockFs.writeFileSync.mockImplementation(((p: unknown, data: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) overridesJson = typeof data === "string" ? data : String(data);
+      }) as typeof fs.writeFileSync);
+      const key = await addCustomLesson("Мой раздел", "Текст");
+      expect(getAllLessonKeys()).toContain(key);
+      await removeCustomLesson(key);
+      expect(getAllLessonKeys()).not.toContain(key);
+    });
+
+    it("removeCustomMainSectionSubItem removes sub-item", async () => {
+      initContent();
+      let overridesJson = "{}";
+      mockFs.readFileSync.mockImplementation((p: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) return overridesJson;
+        if (pathStr.includes("lessons")) return "<p>lesson content</p>";
+        if (pathStr.includes("faq")) return "<p>faq content</p>";
+        throw new Error("file not found");
+      });
+      mockFs.writeFileSync.mockImplementation(((p: unknown, data: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) overridesJson = typeof data === "string" ? data : String(data);
+      }) as typeof fs.writeFileSync);
+      const sectionKey = await createCustomMainSectionNested("Раздел");
+      await addCustomMainSectionSubItem(sectionKey, "Пункт 1", "Текст 1");
+      const item2 = await addCustomMainSectionSubItem(sectionKey, "Пункт 2", "Текст 2");
+      expect(getCustomMainSectionSubIds(sectionKey).length).toBe(2);
+      await removeCustomMainSectionSubItem(sectionKey, item2);
+      expect(getCustomMainSectionSubIds(sectionKey).length).toBe(1);
+      expect(getCustomMainSectionSubItem(sectionKey, item2)).toBeNull();
+    });
+
     it("addCustomMainSection adds section and getCustomMainSectionContent returns content", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
@@ -238,6 +345,47 @@ describe("loader", () => {
       expect(item).toEqual({ label: "Понедельник", content: "Занятия с 10:00." });
       await addCustomMainSectionSubItem(sectionKey, "Вторник", "Занятия с 14:00.");
       expect(getCustomMainSectionSubIds(sectionKey).length).toBe(2);
+    });
+
+    it("removeCustomMainSection removes section and order entry", async () => {
+      initContent();
+      let overridesJson = "{}";
+      mockFs.readFileSync.mockImplementation((p: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) return overridesJson;
+        if (pathStr.includes("lessons")) return "<p>lesson content</p>";
+        if (pathStr.includes("faq")) return "<p>faq content</p>";
+        throw new Error("file not found");
+      });
+      mockFs.writeFileSync.mockImplementation(((p: unknown, data: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) overridesJson = typeof data === "string" ? data : String(data);
+      }) as typeof fs.writeFileSync);
+      const key = await addCustomMainSection("Удаляемый", "Текст");
+      expect(getCustomMainSections()).toHaveLength(1);
+      await removeCustomMainSection(key);
+      expect(getCustomMainSections()).toHaveLength(0);
+      expect(getMainMenuSectionIds().includes(key)).toBe(false);
+    });
+
+    it("setSavedCustomMainSectionLabel updates custom section label", async () => {
+      initContent();
+      let overridesJson = "{}";
+      mockFs.readFileSync.mockImplementation((p: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) return overridesJson;
+        if (pathStr.includes("lessons")) return "<p>lesson content</p>";
+        if (pathStr.includes("faq")) return "<p>faq content</p>";
+        throw new Error("file not found");
+      });
+      mockFs.writeFileSync.mockImplementation(((p: unknown, data: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) overridesJson = typeof data === "string" ? data : String(data);
+      }) as typeof fs.writeFileSync);
+      const key = await addCustomMainSection("Расписание", "Пн–Пт");
+      expect(getCustomMainSections()[0].label).toBe("Расписание");
+      await setSavedCustomMainSectionLabel(key, "Новое расписание");
+      expect(getCustomMainSections()[0].label).toBe("Новое расписание");
     });
 
     it("setSavedMainSectionLabel preserves lessons and faq", async () => {

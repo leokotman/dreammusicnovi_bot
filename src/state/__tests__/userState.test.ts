@@ -74,6 +74,11 @@ describe("userState", () => {
     expect(getState(userId)).toEqual({ type: "awaiting_new_main_section_sub_more", sectionKey: "main_raspisaniye" });
   });
 
+  it("returns set state for awaiting_edit_custom_section_label", () => {
+    setState(userId, { type: "awaiting_edit_custom_section_label", sectionKey: "main_raspisaniye" });
+    expect(getState(userId)).toEqual({ type: "awaiting_edit_custom_section_label", sectionKey: "main_raspisaniye" });
+  });
+
   it("returns set state for awaiting_add_admin", () => {
     setState(userId, { type: "awaiting_add_admin" });
     expect(getState(userId)).toEqual({ type: "awaiting_add_admin" });

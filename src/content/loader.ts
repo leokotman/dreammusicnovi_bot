@@ -53,16 +53,27 @@ const DEFAULT_MAIN_SECTION_LABELS: Record<string, string> = {
 
 let savedContent: SavedContentData = {};
 
+const hiddenLessonKeys = (): string[] => savedContent.hiddenLessonKeys ?? [];
+const hiddenFaqKeys = (): string[] => savedContent.hiddenFaqKeys ?? [];
+
 export function getAllLessonKeys(): string[] {
-  const fixed = [...LESSON_KEYS];
-  const custom = Object.keys(savedContent.customLessonLabels ?? {});
+  const fixed = [...LESSON_KEYS].filter((k) => !hiddenLessonKeys().includes(k));
+  const custom = Object.keys(savedContent.customLessonLabels ?? {}).filter((k) => !hiddenLessonKeys().includes(k));
   return [...fixed, ...custom];
 }
 
 export function getAllFaqKeys(): string[] {
-  const fixed = [...FAQ_KEYS];
-  const custom = Object.keys(savedContent.customFaqLabels ?? {});
+  const fixed = [...FAQ_KEYS].filter((k) => !hiddenFaqKeys().includes(k));
+  const custom = Object.keys(savedContent.customFaqLabels ?? {}).filter((k) => !hiddenFaqKeys().includes(k));
   return [...fixed, ...custom];
+}
+
+export function isLessonKeyFixed(key: string): boolean {
+  return (LESSON_KEYS as readonly string[]).includes(key);
+}
+
+export function isFaqKeyFixed(key: string): boolean {
+  return (FAQ_KEYS as readonly string[]).includes(key);
 }
 
 export function getLessonLabel(key: string): string {
@@ -77,10 +88,13 @@ export function getMainSectionLabel(id: string): string {
   return savedContent.mainSectionLabels?.[id] ?? DEFAULT_MAIN_SECTION_LABELS[id] ?? id;
 }
 
-/** Ordered list of main menu section ids: fixed three then custom. */
+const hiddenMainSectionIds = (): string[] => savedContent.hiddenMainSectionIds ?? [];
+
+/** Ordered list of main menu section ids: fixed three then custom (hidden main sections excluded). */
 export function getMainMenuSectionIds(): string[] {
+  const fixed = [...MAIN_SECTION_IDS].filter((id) => !hiddenMainSectionIds().includes(id));
   const customOrder = savedContent.customMainSectionOrder ?? [];
-  return [...MAIN_SECTION_IDS, ...customOrder];
+  return [...fixed, ...customOrder];
 }
 
 type CustomMainSection =
@@ -262,6 +276,31 @@ function slugForSubItem(label: string, existingKeys: string[]): string {
   return key;
 }
 
+/** Remove a custom main section and all its content/sub-items. */
+export async function removeCustomMainSection(sectionKey: string): Promise<void> {
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const sections = { ...(current.customMainSections ?? {}) };
+  if (!(sectionKey in sections)) return;
+  delete sections[sectionKey];
+  const order = (current.customMainSectionOrder ?? []).filter((k) => k !== sectionKey);
+  savedContent = { ...current, customMainSections: sections, customMainSectionOrder: order };
+  await saveSavedContent(savedContent);
+}
+
+/** Update the display label of a custom main section. */
+export async function setSavedCustomMainSectionLabel(sectionKey: string, label: string): Promise<void> {
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const sections = current.customMainSections ?? {};
+  const section = sections[sectionKey] as CustomMainSection | undefined;
+  if (!section) return;
+  const updated = { ...section, label: label.trim() };
+  const newSections = { ...sections, [sectionKey]: updated };
+  savedContent = { ...current, customMainSections: newSections };
+  await saveSavedContent(savedContent);
+}
+
 /** Slug for custom main section; prefix to avoid clash with lesson/faq keys. */
 function slugFromLabelForMain(label: string): string {
   const base = transliterateCyrillicToLatin(label.trim()).replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
@@ -297,6 +336,124 @@ export async function addCustomFaq(label: string, content: string): Promise<stri
   savedContent = { ...current, customFaqLabels: labels, faq };
   await saveSavedContent(savedContent);
   return key;
+}
+
+/** Hide a lesson topic (fixed or custom) from the list; content is not deleted. */
+export async function addHiddenLessonKey(key: string): Promise<void> {
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const hidden = [...(current.hiddenLessonKeys ?? [])];
+  if (!hidden.includes(key)) hidden.push(key);
+  savedContent = { ...current, hiddenLessonKeys: hidden };
+  await saveSavedContent(savedContent);
+}
+
+/** Remove a custom lesson topic entirely (label + content). No-op for fixed keys. */
+export async function removeCustomLesson(key: string): Promise<void> {
+  if (isLessonKeyFixed(key)) return;
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const labels = { ...(current.customLessonLabels ?? {}) };
+  const lessons = { ...(current.lessons ?? {}) };
+  delete labels[key];
+  delete lessons[key];
+  const hidden = (current.hiddenLessonKeys ?? []).filter((k) => k !== key);
+  savedContent = { ...current, customLessonLabels: labels, lessons, hiddenLessonKeys: hidden.length ? hidden : undefined };
+  await saveSavedContent(savedContent);
+}
+
+/** Hide an FAQ question (fixed or custom) from the list. */
+export async function addHiddenFaqKey(key: string): Promise<void> {
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const hidden = [...(current.hiddenFaqKeys ?? [])];
+  if (!hidden.includes(key)) hidden.push(key);
+  savedContent = { ...current, hiddenFaqKeys: hidden };
+  await saveSavedContent(savedContent);
+}
+
+/** Remove a custom FAQ question entirely. No-op for fixed keys. */
+export async function removeCustomFaq(key: string): Promise<void> {
+  if (isFaqKeyFixed(key)) return;
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const labels = { ...(current.customFaqLabels ?? {}) };
+  const faq = { ...(current.faq ?? {}) };
+  delete labels[key];
+  delete faq[key];
+  const hidden = (current.hiddenFaqKeys ?? []).filter((k) => k !== key);
+  savedContent = { ...current, customFaqLabels: labels, faq, hiddenFaqKeys: hidden.length ? hidden : undefined };
+  await saveSavedContent(savedContent);
+}
+
+/** Hide a main section (lessons, ask, contact) from the main menu. */
+export async function addHiddenMainSectionId(id: string): Promise<void> {
+  if (!MAIN_SECTION_IDS.includes(id as (typeof MAIN_SECTION_IDS)[number])) return;
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const hidden = [...(current.hiddenMainSectionIds ?? [])];
+  if (!hidden.includes(id)) hidden.push(id);
+  savedContent = { ...current, hiddenMainSectionIds: hidden };
+  await saveSavedContent(savedContent);
+}
+
+/** Restore a hidden main section to the main menu. */
+export async function removeHiddenMainSectionId(id: string): Promise<void> {
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const hidden = (current.hiddenMainSectionIds ?? []).filter((x) => x !== id);
+  savedContent = { ...current, hiddenMainSectionIds: hidden.length ? hidden : undefined };
+  await saveSavedContent(savedContent);
+}
+
+/** Restore a hidden lesson topic to the list. */
+export async function removeHiddenLessonKey(key: string): Promise<void> {
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const hidden = (current.hiddenLessonKeys ?? []).filter((x) => x !== key);
+  savedContent = { ...current, hiddenLessonKeys: hidden.length ? hidden : undefined };
+  await saveSavedContent(savedContent);
+}
+
+/** Restore a hidden FAQ question to the list. */
+export async function removeHiddenFaqKey(key: string): Promise<void> {
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const hidden = (current.hiddenFaqKeys ?? []).filter((x) => x !== key);
+  savedContent = { ...current, hiddenFaqKeys: hidden.length ? hidden : undefined };
+  await saveSavedContent(savedContent);
+}
+
+/** Ids of main sections currently hidden from the main menu. */
+export function getHiddenMainSectionIds(): string[] {
+  return [...(savedContent.hiddenMainSectionIds ?? [])];
+}
+
+/** Keys of lesson topics currently hidden from «Об уроках». */
+export function getHiddenLessonKeys(): string[] {
+  return [...(savedContent.hiddenLessonKeys ?? [])];
+}
+
+/** Keys of FAQ questions currently hidden from «Задать вопрос». */
+export function getHiddenFaqKeys(): string[] {
+  return [...(savedContent.hiddenFaqKeys ?? [])];
+}
+
+/** Remove a sub-item from a nested custom main section. */
+export async function removeCustomMainSectionSubItem(sectionKey: string, itemKey: string): Promise<void> {
+  const section = getCustomSection(sectionKey);
+  if (!section || !isNestedSection(section)) return;
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const sections = current.customMainSections ?? {};
+  const existing = sections[sectionKey] as { label: string; subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] } | undefined;
+  if (!existing || !("subItems" in existing)) return;
+  const subItems = { ...existing.subItems };
+  delete subItems[itemKey];
+  const subItemOrder = (existing.subItemOrder ?? []).filter((k) => k !== itemKey);
+  const newSections = { ...sections, [sectionKey]: { ...existing, subItems, subItemOrder } };
+  savedContent = { ...current, customMainSections: newSections };
+  await saveSavedContent(savedContent);
 }
 
 /** Transliterate Cyrillic to Latin so slug keys stay Latin-only. */

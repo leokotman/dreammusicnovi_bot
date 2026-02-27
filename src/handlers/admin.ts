@@ -17,12 +17,30 @@ import {
   getMainSectionLabel,
   getCustomMainSections,
   getCustomMainSectionSubIds,
+  getCustomMainSectionSubItem,
+  isCustomSectionNested,
   MAIN_SECTION_IDS,
+  isLessonKeyFixed,
+  isFaqKeyFixed,
   addCustomLesson,
   addCustomFaq,
   addCustomMainSection,
   createCustomMainSectionNested,
   addCustomMainSectionSubItem,
+  removeCustomMainSection,
+  removeCustomMainSectionSubItem,
+  setSavedCustomMainSectionLabel,
+  addHiddenLessonKey,
+  removeCustomLesson,
+  addHiddenFaqKey,
+  removeCustomFaq,
+  addHiddenMainSectionId,
+  removeHiddenMainSectionId,
+  removeHiddenLessonKey,
+  removeHiddenFaqKey,
+  getHiddenMainSectionIds,
+  getHiddenLessonKeys,
+  getHiddenFaqKeys,
   type LessonKey,
   type FaqKey,
 } from "../content/loader";
@@ -45,10 +63,27 @@ const ADM_FAQ_LABEL_PREFIX = "adm_faq_label:";
 const ADM_FAQ_ANS_PREFIX = "adm_faq_ans:";
 const ADM_MAIN_MENU = "adm_main_menu";
 const ADM_MAIN_SECTION_PREFIX = "adm_main_sec:";
+const ADM_MAIN_SECTION_EDIT_PREFIX = "adm_main_sec_edit:";
 const ADM_ADD_MAIN_SECTION = "adm_add_main_section";
 const ADM_NEW_SEC_FLAT = "adm_new_sec_flat";
 const ADM_NEW_SEC_NESTED = "adm_new_sec_nested";
 const ADM_NEW_SEC_DONE_PREFIX = "adm_new_sec_done:";
+const ADM_CUSTOM_SEC_PREFIX = "adm_custom_sec:";
+const ADM_DEL_SEC_PREFIX = "adm_del_sec:";
+const ADM_CONFIRM_DEL_SEC_PREFIX = "adm_confirm_del_sec:";
+const ADM_DEL_LESSON_PREFIX = "adm_del_lesson:";
+const ADM_CONFIRM_DEL_LESSON_PREFIX = "adm_confirm_del_lesson:";
+const ADM_DEL_FAQ_PREFIX = "adm_del_faq:";
+const ADM_CONFIRM_DEL_FAQ_PREFIX = "adm_confirm_del_faq:";
+const ADM_DEL_MAIN_SEC_PREFIX = "adm_del_main_sec:";
+const ADM_CONFIRM_DEL_MAIN_SEC_PREFIX = "adm_confirm_del_main_sec:";
+const ADM_CUSTOM_SUB_PREFIX = "adm_custom_sub:";
+const ADM_DEL_CUSTOM_SUB_PREFIX = "adm_del_custom_sub:";
+const ADM_CONFIRM_DEL_CUSTOM_SUB_PREFIX = "adm_confirm_del_custom_sub:";
+const ADM_RESTORE = "adm_restore";
+const ADM_RESTORE_MAIN_PREFIX = "adm_restore_main:";
+const ADM_RESTORE_LESSON_PREFIX = "adm_restore_lesson:";
+const ADM_RESTORE_FAQ_PREFIX = "adm_restore_faq:";
 const MAX_PREVIEW_LEN = 2800; // leave room for instruction (Telegram limit 4096)
 
 
@@ -68,15 +103,55 @@ function getAdminMainMenu() {
     [Markup.button.callback("📋 Редактировать главное меню", ADM_MAIN_MENU)],
     [Markup.button.callback("📝 Редактировать «Об уроках»", ADM_LESSONS)],
     [Markup.button.callback("❓ Редактировать «Задать вопрос»", ADM_FAQ)],
+    [Markup.button.callback("↩️ Восстановить удалённые разделы", ADM_RESTORE)],
   ]);
+}
+
+function getAdminRestoreMenu() {
+  const hiddenMain = getHiddenMainSectionIds();
+  const hiddenLessons = getHiddenLessonKeys();
+  const hiddenFaq = getHiddenFaqKeys();
+  const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
+  hiddenMain.forEach((id) => {
+    const label = getMainSectionLabel(id);
+    buttons.push([Markup.button.callback(`📌 ${label} (главное меню)`, `${ADM_RESTORE_MAIN_PREFIX}${id}`)]);
+  });
+  const lessonsLabel = getMainSectionLabel("lessons");
+  hiddenLessons.forEach((key) => {
+    const label = getLessonLabel(key);
+    buttons.push([Markup.button.callback(`📝 ${label} (${lessonsLabel})`, `${ADM_RESTORE_LESSON_PREFIX}${key}`)]);
+  });
+  const askLabel = getMainSectionLabel("ask");
+  hiddenFaq.forEach((key) => {
+    const label = getFaqLabel(key);
+    buttons.push([Markup.button.callback(`❓ ${label} (${askLabel})`, `${ADM_RESTORE_FAQ_PREFIX}${key}`)]);
+  });
+  buttons.push([Markup.button.callback("◀️ Назад", ADM_MAIN)]);
+  return Markup.inlineKeyboard(buttons);
+}
+
+function getAdminRestoreMessage(): string {
+  const hiddenMain = getHiddenMainSectionIds();
+  const hiddenLessons = getHiddenLessonKeys();
+  const hiddenFaq = getHiddenFaqKeys();
+  const total = hiddenMain.length + hiddenLessons.length + hiddenFaq.length;
+  if (total === 0) {
+    return "Нет удалённых разделов для восстановления.";
+  }
+  return "<b>Восстановить удалённые разделы</b>\n\nВыберите раздел или подраздел для восстановления:";
 }
 
 function getAdminMainMenuSubmenu() {
   const sectionButtons = MAIN_SECTION_IDS.map((id) =>
     Markup.button.callback(getMainSectionLabel(id), `${ADM_MAIN_SECTION_PREFIX}${id}`)
   );
+  const customSections = getCustomMainSections();
+  const customButtons = customSections.map((s) =>
+    Markup.button.callback("📌 " + s.label, `${ADM_CUSTOM_SEC_PREFIX}${s.key}`)
+  );
   return Markup.inlineKeyboard([
     ...sectionButtons.map((b) => [b]),
+    ...customButtons.map((b) => [b]),
     [Markup.button.callback("➕ Добавить раздел в главное меню", ADM_ADD_MAIN_SECTION)],
     [Markup.button.callback("◀️ Назад", ADM_MAIN)],
   ]);
@@ -161,7 +236,85 @@ export function registerAdmin(bot: {
     });
   });
 
-  bot.action(new RegExp(`^${ADM_MAIN_SECTION_PREFIX}`), async (ctx) => {
+  bot.action(ADM_RESTORE, async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(getAdminRestoreMessage(), {
+        parse_mode: "HTML",
+        ...getAdminRestoreMenu(),
+      });
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_RESTORE_MAIN_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const id = data.slice(ADM_RESTORE_MAIN_PREFIX.length);
+    if (!MAIN_SECTION_IDS.includes(id as (typeof MAIN_SECTION_IDS)[number])) return;
+    const label = getMainSectionLabel(id);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await removeHiddenMainSectionId(id);
+      await ctx.editMessageText(getAdminRestoreMessage(), {
+        parse_mode: "HTML",
+        ...getAdminRestoreMenu(),
+      });
+      await ctx.reply(`Пункт «${label}» восстановлен в главное меню.`);
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_RESTORE_LESSON_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const key = data.slice(ADM_RESTORE_LESSON_PREFIX.length);
+    const label = getLessonLabel(key);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await removeHiddenLessonKey(key);
+      await ctx.editMessageText(getAdminRestoreMessage(), {
+        parse_mode: "HTML",
+        ...getAdminRestoreMenu(),
+      });
+      await ctx.reply(`Раздел «${label}» восстановлен в список тем.`);
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_RESTORE_FAQ_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const key = data.slice(ADM_RESTORE_FAQ_PREFIX.length);
+    const label = getFaqLabel(key);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await removeHiddenFaqKey(key);
+      await ctx.editMessageText(getAdminRestoreMessage(), {
+        parse_mode: "HTML",
+        ...getAdminRestoreMenu(),
+      });
+      await ctx.reply(`Вопрос «${label}» восстановлен в список.`);
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_MAIN_SECTION_PREFIX}[^:]+$`), async (ctx) => {
     if (!canUseAdmin(ctx)) {
       await ctx.answerCbQuery();
       return;
@@ -173,6 +326,30 @@ export function registerAdmin(bot: {
     if (!MAIN_SECTION_IDS.includes(key as (typeof MAIN_SECTION_IDS)[number])) return;
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
+      const label = getMainSectionLabel(key);
+      await ctx.editMessageText(`Пункт «${label}». Что сделать?`, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("✏️ Редактировать название", `${ADM_MAIN_SECTION_EDIT_PREFIX}${key}`)],
+          [Markup.button.callback("🗑 Удалить из главного меню", `${ADM_DEL_MAIN_SEC_PREFIX}${key}`)],
+          [Markup.button.callback("◀️ Назад", ADM_MAIN_MENU)],
+        ]),
+      });
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_MAIN_SECTION_EDIT_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const key = data.slice(ADM_MAIN_SECTION_EDIT_PREFIX.length);
+    if (!MAIN_SECTION_IDS.includes(key as (typeof MAIN_SECTION_IDS)[number])) return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
       setState(ctx.from!.id, { type: "awaiting_edit_main_section_label", key });
       const currentLabel = getMainSectionLabel(key);
       await ctx.editMessageText(
@@ -180,6 +357,274 @@ export function registerAdmin(bot: {
         { parse_mode: "HTML" }
       );
       await ctx.reply(currentLabel);
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_DEL_MAIN_SEC_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const id = data.slice(ADM_DEL_MAIN_SEC_PREFIX.length);
+    if (!MAIN_SECTION_IDS.includes(id as (typeof MAIN_SECTION_IDS)[number])) return;
+    const label = getMainSectionLabel(id);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(
+        `Удалить пункт «${label}» из главного меню? Пользователи больше не увидят его в меню.`,
+        {
+          parse_mode: "HTML",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("Да, удаляем", `${ADM_CONFIRM_DEL_MAIN_SEC_PREFIX}${id}`)],
+            [Markup.button.callback("Нет, оставляем", ADM_MAIN_MENU)],
+          ]),
+        }
+      );
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_CONFIRM_DEL_MAIN_SEC_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const id = data.slice(ADM_CONFIRM_DEL_MAIN_SEC_PREFIX.length);
+    if (!MAIN_SECTION_IDS.includes(id as (typeof MAIN_SECTION_IDS)[number])) return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await addHiddenMainSectionId(id);
+      const label = getMainSectionLabel(id);
+      await ctx.editMessageText(
+        `<b>Главное меню</b>\n\nПункт «${label}» удалён из главного меню.`,
+        {
+          parse_mode: "HTML",
+          ...getAdminMainMenuSubmenu(),
+        }
+      );
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_CUSTOM_SEC_PREFIX}label:`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const sectionKey = data.slice(`${ADM_CUSTOM_SEC_PREFIX}label:`.length);
+    const sections = getCustomMainSections();
+    const section = sections.find((s) => s.key === sectionKey);
+    if (!section) return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      setState(ctx.from!.id, { type: "awaiting_edit_custom_section_label", sectionKey });
+      await ctx.editMessageText(
+        `Отправьте в следующем сообщении новое <b>название раздела</b> (только текст).\n\nТекущее название — в следующем сообщении.`,
+        { parse_mode: "HTML" }
+      );
+      await ctx.reply(section.label);
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_CUSTOM_SEC_PREFIX}(?!label:).+`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const sectionKey = data.slice(ADM_CUSTOM_SEC_PREFIX.length);
+    const sections = getCustomMainSections();
+    const section = sections.find((s) => s.key === sectionKey);
+    if (!section) return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      const buttons: ReturnType<typeof Markup.button.callback>[][] = [
+        [Markup.button.callback("✏️ Редактировать название", `${ADM_CUSTOM_SEC_PREFIX}label:${sectionKey}`)],
+        [Markup.button.callback("🗑 Удалить раздел", `${ADM_DEL_SEC_PREFIX}${sectionKey}`)],
+      ];
+      if (isCustomSectionNested(sectionKey)) {
+        buttons.unshift([Markup.button.callback("📋 Подпункты", `${ADM_CUSTOM_SUB_PREFIX}list:${sectionKey}`)]);
+      }
+      buttons.push([Markup.button.callback("◀️ Назад", ADM_MAIN_MENU)]);
+      await ctx.editMessageText(`Раздел «${section.label}». Что сделать?`, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard(buttons),
+      });
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_CUSTOM_SUB_PREFIX}list:`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const sectionKey = data.slice(`${ADM_CUSTOM_SUB_PREFIX}list:`.length);
+    const sections = getCustomMainSections();
+    const section = sections.find((s) => s.key === sectionKey);
+    if (!section || !isCustomSectionNested(sectionKey)) return;
+    const subIds = getCustomMainSectionSubIds(sectionKey);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      const subButtons = subIds.map((itemKey) => {
+        const item = getCustomMainSectionSubItem(sectionKey, itemKey);
+        const label = item?.label ?? itemKey;
+        return [Markup.button.callback(label, `${ADM_CUSTOM_SUB_PREFIX}${sectionKey}:${itemKey}`)];
+      });
+      const keyboard = [
+        ...subButtons,
+        [Markup.button.callback("◀️ Назад", `${ADM_CUSTOM_SEC_PREFIX}${sectionKey}`)],
+      ];
+      await ctx.editMessageText(`Подпункты раздела «${section.label}»:`, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard(keyboard),
+      });
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_CUSTOM_SUB_PREFIX}[^l]`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const rest = data.slice(ADM_CUSTOM_SUB_PREFIX.length);
+    const colon = rest.indexOf(":");
+    if (colon === -1) return;
+    const sectionKey = rest.slice(0, colon);
+    const itemKey = rest.slice(colon + 1);
+    const item = getCustomMainSectionSubItem(sectionKey, itemKey);
+    if (!item) return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(`Подпункт «${item.label}». Что сделать?`, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("🗑 Удалить подпункт", `${ADM_DEL_CUSTOM_SUB_PREFIX}${sectionKey}:${itemKey}`)],
+          [Markup.button.callback("◀️ Назад", `${ADM_CUSTOM_SUB_PREFIX}list:${sectionKey}`)],
+        ]),
+      });
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_DEL_CUSTOM_SUB_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const rest = data.slice(ADM_DEL_CUSTOM_SUB_PREFIX.length);
+    const colon = rest.indexOf(":");
+    if (colon === -1) return;
+    const sectionKey = rest.slice(0, colon);
+    const itemKey = rest.slice(colon + 1);
+    const item = getCustomMainSectionSubItem(sectionKey, itemKey);
+    if (!item) return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(
+        `Удалить подпункт «${item.label}»?`,
+        {
+          parse_mode: "HTML",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("Да, удаляем", `${ADM_CONFIRM_DEL_CUSTOM_SUB_PREFIX}${sectionKey}:${itemKey}`)],
+            [Markup.button.callback("Нет, оставляем", `${ADM_CUSTOM_SUB_PREFIX}${sectionKey}:${itemKey}`)],
+          ]),
+        }
+      );
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_CONFIRM_DEL_CUSTOM_SUB_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const rest = data.slice(ADM_CONFIRM_DEL_CUSTOM_SUB_PREFIX.length);
+    const colon = rest.indexOf(":");
+    if (colon === -1) return;
+    const sectionKey = rest.slice(0, colon);
+    const itemKey = rest.slice(colon + 1);
+    const sections = getCustomMainSections();
+    const section = sections.find((s) => s.key === sectionKey);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await removeCustomMainSectionSubItem(sectionKey, itemKey);
+      const label = section?.label ?? sectionKey;
+      await ctx.editMessageText(`Подпункт удалён.`, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([[Markup.button.callback("◀️ К подпунктам", `${ADM_CUSTOM_SUB_PREFIX}list:${sectionKey}`)]]),
+      });
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_DEL_SEC_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const sectionKey = data.slice(ADM_DEL_SEC_PREFIX.length);
+    const sections = getCustomMainSections();
+    const section = sections.find((s) => s.key === sectionKey);
+    if (!section) return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(
+        "Вы уверены, что хотите удалить целиком эту секцию меню? Все дочерние секции с описаниями будут также удалены.",
+        {
+          parse_mode: "HTML",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("Да, удаляем", `${ADM_CONFIRM_DEL_SEC_PREFIX}${sectionKey}`)],
+            [Markup.button.callback("Нет, оставляем", ADM_MAIN_MENU)],
+          ]),
+        }
+      );
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_CONFIRM_DEL_SEC_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const sectionKey = data.slice(ADM_CONFIRM_DEL_SEC_PREFIX.length);
+    const sections = getCustomMainSections();
+    const section = sections.find((s) => s.key === sectionKey);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await removeCustomMainSection(sectionKey);
+      const label = section?.label ?? sectionKey;
+      await ctx.editMessageText(
+        `<b>Главное меню</b>\n\nРаздел «${label}» удалён.`,
+        {
+          parse_mode: "HTML",
+          ...getAdminMainMenuSubmenu(),
+        }
+      );
     });
   });
 
@@ -287,8 +732,59 @@ export function registerAdmin(bot: {
         ...Markup.inlineKeyboard([
           [Markup.button.callback("📝 Редактировать название", `${ADM_LESSON_LABEL_PREFIX}${key}`)],
           [Markup.button.callback("📄 Редактировать текст", `${ADM_LESSON_PREFIX}${key}`)],
+          [Markup.button.callback("🗑 Удалить раздел", `${ADM_DEL_LESSON_PREFIX}${key}`)],
           [Markup.button.callback("◀️ Назад", ADM_LESSONS)],
         ]),
+      });
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_DEL_LESSON_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const key = data.slice(ADM_DEL_LESSON_PREFIX.length);
+    if (!getAllLessonKeys().includes(key)) return;
+    const label = getLessonLabel(key);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(
+        `Удалить раздел «${label}»? Он исчезнет из списка тем в «Об уроках».`,
+        {
+          parse_mode: "HTML",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("Да, удаляем", `${ADM_CONFIRM_DEL_LESSON_PREFIX}${key}`)],
+            [Markup.button.callback("Нет, оставляем", ADM_LESSONS)],
+          ]),
+        }
+      );
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_CONFIRM_DEL_LESSON_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const key = data.slice(ADM_CONFIRM_DEL_LESSON_PREFIX.length);
+    const label = getLessonLabel(key);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      if (isLessonKeyFixed(key)) {
+        await addHiddenLessonKey(key);
+      } else {
+        await removeCustomLesson(key);
+      }
+      await ctx.editMessageText(`Раздел «${label}» удалён из списка.`, {
+        parse_mode: "HTML",
+        ...getAdminLessonsMenu(),
       });
     });
   });
@@ -401,8 +897,58 @@ export function registerAdmin(bot: {
         ...Markup.inlineKeyboard([
           [Markup.button.callback("📝 Редактировать формулировку вопроса", `${ADM_FAQ_LABEL_PREFIX}${key}`)],
           [Markup.button.callback("📄 Редактировать ответ", `${ADM_FAQ_ANS_PREFIX}${key}`)],
+          [Markup.button.callback("🗑 Удалить вопрос", `${ADM_DEL_FAQ_PREFIX}${key}`)],
           [Markup.button.callback("◀️ Назад", ADM_FAQ)],
         ]),
+      });
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_DEL_FAQ_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const key = data.slice(ADM_DEL_FAQ_PREFIX.length);
+    if (!getAllFaqKeys().includes(key)) return;
+    const label = getFaqLabel(key);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(
+        `Удалить вопрос «${label}»? Он исчезнет из списка в «Задать вопрос».`,
+        {
+          parse_mode: "HTML",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("Да, удаляем", `${ADM_CONFIRM_DEL_FAQ_PREFIX}${key}`)],
+            [Markup.button.callback("Нет, оставляем", ADM_FAQ)],
+          ]),
+        }
+      );
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_CONFIRM_DEL_FAQ_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const key = data.slice(ADM_CONFIRM_DEL_FAQ_PREFIX.length);
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      if (isFaqKeyFixed(key)) {
+        await addHiddenFaqKey(key);
+      } else {
+        await removeCustomFaq(key);
+      }
+      await ctx.editMessageText("Вопрос удалён из списка.", {
+        parse_mode: "HTML",
+        ...getAdminFaqMenu(),
       });
     });
   });
@@ -534,6 +1080,12 @@ export async function handleAdminEdit(
     await setSavedMainSectionLabel(state.key, stripHtml(text));
     clearState(userId);
     await reply(`Название пункта главного меню обновлено.`);
+    return true;
+  }
+  if (state.type === "awaiting_edit_custom_section_label") {
+    await setSavedCustomMainSectionLabel(state.sectionKey, stripHtml(text));
+    clearState(userId);
+    await reply(`Название раздела обновлено.`);
     return true;
   }
   if (state.type === "awaiting_new_main_section_label") {

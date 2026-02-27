@@ -22,7 +22,8 @@ export type PendingState =
   | { type: "awaiting_new_main_section_choice"; label: string }
   | { type: "awaiting_new_main_section_sub_label"; sectionKey: string }
   | { type: "awaiting_new_main_section_sub_content"; sectionKey: string; itemLabel: string }
-  | { type: "awaiting_new_main_section_sub_more"; sectionKey: string };
+  | { type: "awaiting_new_main_section_sub_more"; sectionKey: string }
+  | { type: "awaiting_edit_custom_section_label"; sectionKey: string };
 
 const store = new Map<number, { state: PendingState; at: number }>();
 
