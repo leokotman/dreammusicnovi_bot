@@ -16,6 +16,7 @@ import { getState, clearState, setState } from "../state/userState";
 import { withErrorHandling } from "../middleware/errorHandler";
 import { getLessonLabel } from "../menus/lessons.menu";
 import { FAQ_LABELS } from "../menus/ask.menu";
+import { stripHtml, escapeForTelegramHtml } from "../utils/html";
 
 const ADM_MAIN = "adm_main";
 const ADM_LESSONS = "adm_lessons";
@@ -24,15 +25,21 @@ const ADM_LESSON_PREFIX = "adm_lesson:";
 const ADM_FAQ_PREFIX = "adm_faq:";
 const MAX_PREVIEW_LEN = 2800; // leave room for instruction + "Текущий текст" (Telegram limit 4096)
 
+
 function canUseAdmin(ctx: Context): boolean {
   const id = ctx.from?.id?.toString();
   return id !== undefined && isAdmin(id);
 }
 
 function truncateForPreview(text: string): string {
-  const plain = text.replace(/<[^>]+>/g, "").trim();
-  if (plain.length <= MAX_PREVIEW_LEN) return text;
-  return text.slice(0, MAX_PREVIEW_LEN) + "\n\n... (текст обрезан)";
+  const plain = stripHtml(text);
+  if (plain.length <= MAX_PREVIEW_LEN) return plain;
+  return plain.slice(0, MAX_PREVIEW_LEN) + "\n\n... (текст обрезан)";
+}
+
+/** Truncate and escape for use inside an HTML message (admin "current text" preview). */
+function previewForAdminMessage(raw: string): string {
+  return escapeForTelegramHtml(truncateForPreview(raw));
 }
 
 function getAdminMainMenu() {
@@ -143,9 +150,9 @@ export function registerAdmin(bot: {
       setState(ctx.from!.id, { type: "awaiting_edit_lesson", key });
       const label = getLessonLabel(key as LessonKey);
       const current = getLesson(key as LessonKey);
-      const preview = truncateForPreview(current);
+      const preview = previewForAdminMessage(current);
       const msg =
-        `Отправьте в следующем сообщении новый текст для раздела «${label}» (можно с HTML: <b>, <i>).\n\n` +
+        `Отправьте в следующем сообщении новый текст для раздела «${label}» (только текст, без разметки).\n\n` +
         `———\n<b>Текущий текст:</b>\n\n${preview}`;
       await ctx.editMessageText(msg, { parse_mode: "HTML" });
     });
@@ -166,9 +173,9 @@ export function registerAdmin(bot: {
       setState(ctx.from!.id, { type: "awaiting_edit_faq", key });
       const label = FAQ_LABELS[key as FaqKey];
       const current = getFaq(key as FaqKey);
-      const preview = truncateForPreview(current);
+      const preview = previewForAdminMessage(current);
       const msg =
-        `Отправьте в следующем сообщении новый текст для ответа «${label}» (можно с HTML: <b>, <i>).\n\n` +
+        `Отправьте в следующем сообщении новый текст для ответа «${label}» (только текст, без разметки).\n\n` +
         `———\n<b>Текущий текст:</b>\n\n${preview}`;
       await ctx.editMessageText(msg, { parse_mode: "HTML" });
     });
@@ -197,7 +204,7 @@ export function registerAdmin(bot: {
         return;
       }
       setState(ctx.from!.id, { type: "awaiting_edit_lesson", key });
-      await ctx.reply(`Отправьте новый HTML-текст для раздела «${getLessonLabel(key as LessonKey)}».`);
+      await ctx.reply(`Отправьте новый текст для раздела «${getLessonLabel(key as LessonKey)}» (только текст, без разметки).`);
     });
   });
 
@@ -210,7 +217,7 @@ export function registerAdmin(bot: {
         return;
       }
       setState(ctx.from!.id, { type: "awaiting_edit_faq", key });
-      await ctx.reply(`Отправьте новый HTML-текст для ответа «${FAQ_LABELS[key as FaqKey]}».`);
+      await ctx.reply(`Отправьте новый текст для ответа «${FAQ_LABELS[key as FaqKey]}» (только текст, без разметки).`);
     });
   });
 }
@@ -224,14 +231,14 @@ export async function handleAdminEdit(
   const state = getState(userId);
   if (!state) return false;
   if (state.type === "awaiting_edit_lesson") {
-    setLessonOverride(state.key, text);
+    setLessonOverride(state.key, stripHtml(text));
     clearState(userId);
     const label = getLessonLabel(state.key as LessonKey);
     await reply(`Раздел «${label}» обновлён.`);
     return true;
   }
   if (state.type === "awaiting_edit_faq") {
-    setFaqOverride(state.key, text);
+    setFaqOverride(state.key, stripHtml(text));
     clearState(userId);
     const label = FAQ_LABELS[state.key as FaqKey];
     await reply(`Ответ «${label}» обновлён.`);

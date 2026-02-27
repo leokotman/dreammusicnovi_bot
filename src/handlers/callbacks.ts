@@ -1,6 +1,7 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
 import { getLesson, getFaq } from "../content/loader";
+import { stripHtml, escapeForTelegramHtml } from "../utils/html";
 import { getMainMenu, mainMenuMessage, MAIN, LESSONS, ASK, CONTACT } from "../menus/main.menu";
 import {
   getLessonsMenu,
@@ -57,7 +58,8 @@ export function registerCallbacks(bot: {
         return;
       }
       await ctx.answerCbQuery();
-      const content = getLesson(key);
+      const raw = getLesson(key);
+      const content = escapeForTelegramHtml(stripHtml(raw));
       const breadcrumb = `🎶 Об уроках → ${getLessonLabel(key)}`;
       await ctx.editMessageText(`${breadcrumb}\n\n${content}`, {
         parse_mode: "HTML",
@@ -98,7 +100,8 @@ export function registerCallbacks(bot: {
         return;
       }
       await ctx.answerCbQuery();
-      const content = getFaq(key);
+      const raw = getFaq(key);
+      const content = escapeForTelegramHtml(stripHtml(raw));
       const breadcrumb = `❓ Задать вопрос → ${FAQ_LABELS[key]}`;
       await ctx.editMessageText(`${breadcrumb}\n\n${content}`, {
         parse_mode: "HTML",
