@@ -8,6 +8,7 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
+COPY api ./api
 RUN npm run build
 
 # Runtime stage
@@ -23,4 +24,4 @@ COPY content ./content
 
 # data/ is created at runtime for overrides.json and admins.json (writable)
 ENV NODE_ENV=production
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/src/index.js"]

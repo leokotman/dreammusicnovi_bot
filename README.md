@@ -89,5 +89,6 @@ Then everyone sees all three in the menu; the bot **replies** to `/admin` only f
 
 The bot uses long polling and does not listen on a port — run it as a **worker / background service**, not as a web app.
 
-- **fps.ms:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) has step-by-step for deploying to fps.ms. Set `BOT_TOKEN` and other variables in the panel.
+- **Vercel** (webhook, free): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Connect GitHub, set env vars, deploy, then open `/api/webhook?set=YOUR_SECRET` once to set the Telegram webhook. No always-on process; teacher overrides do not persist.
+- **Railway** (long polling, paid) or **Render** (long polling, free tier may sleep): same doc. Connect GitHub, set `BOT_TOKEN`, deploy.
 - **Docker:** Run locally or on your own server: `docker build -t dreammusic-bot .` then `docker run --env-file .env dreammusic-bot`.
