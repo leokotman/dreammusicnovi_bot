@@ -43,6 +43,14 @@ const FIXED_FAQ_LABELS: Record<string, string> = {
   noEarForMusic: "У меня нет слуха — получится ли?",
 };
 
+/** Fixed main menu section ids and default labels. */
+export const MAIN_SECTION_IDS = ["lessons", "ask", "contact"] as const;
+const DEFAULT_MAIN_SECTION_LABELS: Record<string, string> = {
+  lessons: "Об уроках",
+  ask: "Задать вопрос",
+  contact: "Связаться с преподавателем",
+};
+
 let savedContent: SavedContentData = {};
 
 export function getAllLessonKeys(): string[] {
@@ -63,6 +71,30 @@ export function getLessonLabel(key: string): string {
 
 export function getFaqLabel(key: string): string {
   return savedContent.faqLabelOverrides?.[key] ?? FIXED_FAQ_LABELS[key] ?? savedContent.customFaqLabels?.[key] ?? key;
+}
+
+export function getMainSectionLabel(id: string): string {
+  return savedContent.mainSectionLabels?.[id] ?? DEFAULT_MAIN_SECTION_LABELS[id] ?? id;
+}
+
+/** Ordered list of main menu section ids: fixed three then custom. */
+export function getMainMenuSectionIds(): string[] {
+  const customOrder = savedContent.customMainSectionOrder ?? [];
+  return [...MAIN_SECTION_IDS, ...customOrder];
+}
+
+export function getCustomMainSections(): { key: string; label: string; content: string }[] {
+  const order = savedContent.customMainSectionOrder ?? [];
+  const sections = savedContent.customMainSections ?? {};
+  return order
+    .filter((key) => sections[key])
+    .map((key) => ({ key, label: sections[key].label, content: sections[key].content }));
+}
+
+export function getCustomMainSectionContent(key: string): string | null {
+  const sections = savedContent.customMainSections ?? {};
+  const item = sections[key];
+  return item ? item.content : null;
 }
 
 /** Load saved content from storage (Blob or fs) into memory. Call at start of each webhook request so edits persist. */
@@ -124,6 +156,41 @@ export async function setSavedFaqLabel(key: string, label: string): Promise<void
   const labels = { ...(current.faqLabelOverrides ?? {}), [key]: label.trim() };
   savedContent = { ...current, faqLabelOverrides: labels };
   await saveSavedContent(savedContent);
+}
+
+/** Save the display label for a main menu section (lessons, ask, contact). */
+export async function setSavedMainSectionLabel(id: string, label: string): Promise<void> {
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const labels = { ...(current.mainSectionLabels ?? {}), [id]: label.trim() };
+  savedContent = { ...current, mainSectionLabels: labels };
+  await saveSavedContent(savedContent);
+}
+
+/** Add a new custom main menu section (label + content). Returns the new key. */
+export async function addCustomMainSection(label: string, content: string): Promise<string> {
+  const key = slugFromLabelForMain(label);
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const sections = { ...(current.customMainSections ?? {}), [key]: { label: label.trim(), content: content.trim() } };
+  const order = [...(current.customMainSectionOrder ?? [])];
+  if (!order.includes(key)) order.push(key);
+  savedContent = { ...current, customMainSections: sections, customMainSectionOrder: order };
+  await saveSavedContent(savedContent);
+  return key;
+}
+
+/** Slug for custom main section; prefix to avoid clash with lesson/faq keys. */
+function slugFromLabelForMain(label: string): string {
+  const base = transliterateCyrillicToLatin(label.trim()).replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+  if (!base) return "main_custom_" + Date.now();
+  const prefix = "main_";
+  const order = savedContent.customMainSectionOrder ?? [];
+  const sections = savedContent.customMainSections ?? {};
+  let key = prefix + base;
+  let n = 0;
+  while (sections[key] || order.includes(key)) key = `${prefix}${base}_${++n}`;
+  return key;
 }
 
 /** Add a new lesson section (label + content). Returns the new key. */

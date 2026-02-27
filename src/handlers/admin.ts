@@ -9,12 +9,16 @@ import {
   setSavedFaqContent,
   setSavedLessonLabel,
   setSavedFaqLabel,
+  setSavedMainSectionLabel,
   getAllLessonKeys,
   getAllFaqKeys,
   getLessonLabel,
   getFaqLabel,
+  getMainSectionLabel,
+  MAIN_SECTION_IDS,
   addCustomLesson,
   addCustomFaq,
+  addCustomMainSection,
   type LessonKey,
   type FaqKey,
 } from "../content/loader";
@@ -35,6 +39,9 @@ const ADM_FAQ_PREFIX = "adm_faq:";
 const ADM_FAQ_SEL_PREFIX = "adm_faq_sel:";
 const ADM_FAQ_LABEL_PREFIX = "adm_faq_label:";
 const ADM_FAQ_ANS_PREFIX = "adm_faq_ans:";
+const ADM_MAIN_MENU = "adm_main_menu";
+const ADM_MAIN_SECTION_PREFIX = "adm_main_sec:";
+const ADM_ADD_MAIN_SECTION = "adm_add_main_section";
 const MAX_PREVIEW_LEN = 2800; // leave room for instruction (Telegram limit 4096)
 
 
@@ -51,8 +58,20 @@ function truncateForPreview(text: string): string {
 
 function getAdminMainMenu() {
   return Markup.inlineKeyboard([
+    [Markup.button.callback("📋 Редактировать главное меню", ADM_MAIN_MENU)],
     [Markup.button.callback("📝 Редактировать «Об уроках»", ADM_LESSONS)],
     [Markup.button.callback("❓ Редактировать «Задать вопрос»", ADM_FAQ)],
+  ]);
+}
+
+function getAdminMainMenuSubmenu() {
+  const sectionButtons = MAIN_SECTION_IDS.map((id) =>
+    Markup.button.callback(getMainSectionLabel(id), `${ADM_MAIN_SECTION_PREFIX}${id}`)
+  );
+  return Markup.inlineKeyboard([
+    ...sectionButtons.map((b) => [b]),
+    [Markup.button.callback("➕ Добавить раздел в главное меню", ADM_ADD_MAIN_SECTION)],
+    [Markup.button.callback("◀️ Назад", ADM_MAIN)],
   ]);
 }
 
@@ -115,6 +134,60 @@ export function registerAdmin(bot: {
         parse_mode: "HTML",
         ...getAdminMainMenu(),
       });
+    });
+  });
+
+  bot.action(ADM_MAIN_MENU, async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(
+        "<b>Главное меню</b>\n\nРедактируйте названия пунктов или добавьте новый раздел:",
+        {
+          parse_mode: "HTML",
+          ...getAdminMainMenuSubmenu(),
+        }
+      );
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_MAIN_SECTION_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const key = data.slice(ADM_MAIN_SECTION_PREFIX.length);
+    if (!MAIN_SECTION_IDS.includes(key as (typeof MAIN_SECTION_IDS)[number])) return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      setState(ctx.from!.id, { type: "awaiting_edit_main_section_label", key });
+      const currentLabel = getMainSectionLabel(key);
+      await ctx.editMessageText(
+        `Отправьте в следующем сообщении новое <b>название пункта главного меню</b> (только текст).\n\nТекущее название — в следующем сообщении.`,
+        { parse_mode: "HTML" }
+      );
+      await ctx.reply(currentLabel);
+    });
+  });
+
+  bot.action(ADM_ADD_MAIN_SECTION, async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      setState(ctx.from!.id, { type: "awaiting_new_main_section_label" });
+      await ctx.editMessageText(
+        "Отправьте в следующем сообщении <b>название нового раздела</b> (как он будет отображаться в главном меню). Затем отправьте текст раздела.",
+        { parse_mode: "HTML" }
+      );
     });
   });
 
@@ -391,6 +464,23 @@ export async function handleAdminEdit(
     await setSavedFaqLabel(state.key, stripHtml(text));
     clearState(userId);
     await reply(`Формулировка вопроса обновлена.`);
+    return true;
+  }
+  if (state.type === "awaiting_edit_main_section_label") {
+    await setSavedMainSectionLabel(state.key, stripHtml(text));
+    clearState(userId);
+    await reply(`Название пункта главного меню обновлено.`);
+    return true;
+  }
+  if (state.type === "awaiting_new_main_section_label") {
+    setState(userId, { type: "awaiting_new_main_section_content", label: text.trim() });
+    await reply(`Название раздела: «${text.trim()}». Теперь отправьте текст раздела.`);
+    return true;
+  }
+  if (state.type === "awaiting_new_main_section_content") {
+    const key = await addCustomMainSection(state.label, stripHtml(text));
+    clearState(userId);
+    await reply(`Раздел «${state.label}» добавлен в главное меню (ключ: ${key}).`);
     return true;
   }
   if (state.type === "awaiting_new_lesson_label") {

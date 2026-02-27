@@ -1,5 +1,5 @@
 import { Markup } from "telegraf";
-import { getAllFaqKeys, getFaqLabel } from "../content/loader";
+import { getAllFaqKeys, getFaqLabel, getMainSectionLabel } from "../content/loader";
 import { MAIN } from "./main.menu";
 
 const FAQ_PREFIX = "faq:";
@@ -31,7 +31,9 @@ export function getAskMenuForTopic() {
   ]);
 }
 
-export const askMenuMessage = "❓ <b>Задать вопрос</b>\n\nВыберите вопрос или задайте свой:";
+export function getAskMenuMessage(): string {
+  return `❓ <b>${getMainSectionLabel("ask")}</b>\n\nВыберите вопрос или задайте свой:`;
+}
 
 /** Russian labels for FAQ (fixed keys). Re-export for backward compat; use getFaqLabel from loader for any key. */
 export const FAQ_LABELS = {

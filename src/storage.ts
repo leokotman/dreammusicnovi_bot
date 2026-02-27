@@ -29,6 +29,12 @@ export type SavedContentData = {
   lessonLabelOverrides?: Record<string, string>;
   /** Saved display label for FAQ questions (built-in or custom). */
   faqLabelOverrides?: Record<string, string>;
+  /** Saved labels for main menu sections: lessons, ask, contact. */
+  mainSectionLabels?: Record<string, string>;
+  /** Custom main menu sections (key -> { label, content }). Order in customMainSectionOrder. */
+  customMainSections?: Record<string, { label: string; content: string }>;
+  /** Order of custom main section keys for display. */
+  customMainSectionOrder?: string[];
 };
 
 export type AdminsData = { ids: number[] };

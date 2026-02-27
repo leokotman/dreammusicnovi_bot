@@ -3,7 +3,7 @@ import {
   parseLessonCallback,
   getLessonsMenu,
   getLessonsMenuForTopic,
-  lessonsMenuMessage,
+  getLessonsMenuMessage,
   LESSONS_BACK,
 } from "../lessons.menu";
 import { MAIN } from "../main.menu";
@@ -35,10 +35,11 @@ describe("lessons.menu", () => {
     });
   });
 
-  describe("lessonsMenuMessage", () => {
+  describe("getLessonsMenuMessage", () => {
     it("contains expected text", () => {
-      expect(lessonsMenuMessage).toContain("Об уроках");
-      expect(lessonsMenuMessage).toContain("Выберите тему");
+      const msg = getLessonsMenuMessage();
+      expect(msg).toContain("Об уроках");
+      expect(msg).toContain("Выберите тему");
     });
   });
 

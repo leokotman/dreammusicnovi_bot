@@ -7,10 +7,12 @@ jest.mock("../../content/loader", () => ({
   setSavedFaqContent: jest.fn().mockResolvedValue(undefined),
   setSavedLessonLabel: jest.fn().mockResolvedValue(undefined),
   setSavedFaqLabel: jest.fn().mockResolvedValue(undefined),
+  setSavedMainSectionLabel: jest.fn().mockResolvedValue(undefined),
   getLessonLabel: jest.fn((key: string) => `Label-${key}`),
   getFaqLabel: jest.fn((key: string) => `Faq-${key}`),
   addCustomLesson: jest.fn().mockResolvedValue("new_lesson_key"),
   addCustomFaq: jest.fn().mockResolvedValue("new_faq_key"),
+  addCustomMainSection: jest.fn().mockResolvedValue("main_custom_1"),
   getAllLessonKeys: jest.fn().mockReturnValue([]),
   getAllFaqKeys: jest.fn().mockReturnValue([]),
   getLesson: jest.fn(),
@@ -38,6 +40,8 @@ const setSavedLessonContent = loader.setSavedLessonContent as jest.Mock;
 const setSavedFaqContent = loader.setSavedFaqContent as jest.Mock;
 const setSavedLessonLabel = loader.setSavedLessonLabel as jest.Mock;
 const setSavedFaqLabel = loader.setSavedFaqLabel as jest.Mock;
+const setSavedMainSectionLabel = loader.setSavedMainSectionLabel as jest.Mock;
+const addCustomMainSection = loader.addCustomMainSection as jest.Mock;
 const getState = userState.getState as jest.Mock;
 const clearState = userState.clearState as jest.Mock;
 
@@ -90,5 +94,32 @@ describe("handleAdminEdit", () => {
     expect(setSavedFaqLabel).toHaveBeenCalledWith("noEarForMusic", "А что если нет слуха?");
     expect(clearState).toHaveBeenCalledWith(userId);
     expect(reply).toHaveBeenCalledWith("Формулировка вопроса обновлена.");
+  });
+
+  it("handles awaiting_edit_main_section_label: calls setSavedMainSectionLabel", async () => {
+    getState.mockReturnValue({ type: "awaiting_edit_main_section_label", key: "lessons" });
+    const result = await handleAdminEdit(userId, "О занятиях", reply);
+    expect(result).toBe(true);
+    expect(setSavedMainSectionLabel).toHaveBeenCalledWith("lessons", "О занятиях");
+    expect(clearState).toHaveBeenCalledWith(userId);
+    expect(reply).toHaveBeenCalledWith("Название пункта главного меню обновлено.");
+  });
+
+  it("handles awaiting_new_main_section_label: sets state and asks for content", async () => {
+    getState.mockReturnValue({ type: "awaiting_new_main_section_label" });
+    const result = await handleAdminEdit(userId, "Расписание", reply);
+    expect(result).toBe(true);
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringContaining("Название раздела")
+    );
+  });
+
+  it("handles awaiting_new_main_section_content: calls addCustomMainSection", async () => {
+    getState.mockReturnValue({ type: "awaiting_new_main_section_content", label: "Расписание" });
+    const result = await handleAdminEdit(userId, "Пн–Пт 10:00–18:00", reply);
+    expect(result).toBe(true);
+    expect(addCustomMainSection).toHaveBeenCalledWith("Расписание", "Пн–Пт 10:00–18:00");
+    expect(clearState).toHaveBeenCalledWith(userId);
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("добавлен в главное меню"));
   });
 });

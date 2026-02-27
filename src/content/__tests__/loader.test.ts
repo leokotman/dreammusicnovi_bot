@@ -3,19 +3,26 @@ import * as path from "path";
 import {
   LESSON_KEYS,
   FAQ_KEYS,
+  MAIN_SECTION_IDS,
   getLesson,
   getFaq,
   getLessonLabel,
   getFaqLabel,
+  getMainSectionLabel,
+  getMainMenuSectionIds,
+  getCustomMainSections,
+  getCustomMainSectionContent,
   setSavedLessonContent,
   setSavedFaqContent,
   setSavedLessonLabel,
   setSavedFaqLabel,
+  setSavedMainSectionLabel,
   getSavedContent,
   initContent,
   replaceSavedContent,
   addCustomLesson,
   addCustomFaq,
+  addCustomMainSection,
 } from "../loader";
 
 jest.mock("fs");
@@ -151,6 +158,57 @@ describe("loader", () => {
       expect(content.faq?.amITooOld).toBe("new answer");
       expect(content.lessons?.price).toBe("x");
       expect(content.faqLabelOverrides?.amITooOld).toBe("label");
+    });
+  });
+
+  describe("main section labels and custom sections", () => {
+    it("getMainSectionLabel returns default for lessons, ask, contact", () => {
+      initContent();
+      expect(getMainSectionLabel("lessons")).toBe("Об уроках");
+      expect(getMainSectionLabel("ask")).toBe("Задать вопрос");
+      expect(getMainSectionLabel("contact")).toBe("Связаться с преподавателем");
+    });
+
+    it("getMainSectionLabel returns saved label after setSavedMainSectionLabel", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      await setSavedMainSectionLabel("lessons", "О занятиях");
+      expect(getMainSectionLabel("lessons")).toBe("О занятиях");
+      expect(getMainSectionLabel("ask")).toBe("Задать вопрос");
+    });
+
+    it("getMainMenuSectionIds returns fixed ids then custom order", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      expect(getMainMenuSectionIds()).toEqual([...MAIN_SECTION_IDS]);
+      await addCustomMainSection("Расписание", "Пн–Пт 10:00–18:00");
+      const ids = getMainMenuSectionIds();
+      expect(ids.slice(0, 3)).toEqual([...MAIN_SECTION_IDS]);
+      expect(ids.length).toBe(4);
+      expect(ids[3]).toMatch(/^main_/);
+    });
+
+    it("addCustomMainSection adds section and getCustomMainSectionContent returns content", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      const key = await addCustomMainSection("Расписание", "Пн–Пт 10:00–18:00");
+      expect(key).toMatch(/^main_/);
+      const sections = getCustomMainSections();
+      expect(sections).toHaveLength(1);
+      expect(sections[0].label).toBe("Расписание");
+      expect(sections[0].content).toBe("Пн–Пт 10:00–18:00");
+      expect(getCustomMainSectionContent(key)).toBe("Пн–Пт 10:00–18:00");
+    });
+
+    it("setSavedMainSectionLabel preserves lessons and faq", async () => {
+      const existing = { lessons: { price: "x" }, faq: { amITooOld: "y" } };
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(existing));
+      initContent();
+      await setSavedMainSectionLabel("contact", "Контакты");
+      const content = getSavedContent();
+      expect(content.mainSectionLabels?.contact).toBe("Контакты");
+      expect(content.lessons?.price).toBe("x");
+      expect(content.faq?.amITooOld).toBe("y");
     });
   });
 

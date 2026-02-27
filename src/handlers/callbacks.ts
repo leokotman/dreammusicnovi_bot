@@ -1,20 +1,33 @@
 import type { Context } from "telegraf";
 import { Markup } from "telegraf";
-import { getLesson, getFaq } from "../content/loader";
+import {
+  getLesson,
+  getFaq,
+  getMainSectionLabel,
+  getCustomMainSectionContent,
+} from "../content/loader";
 import { stripHtml, escapeForTelegramHtml } from "../utils/html";
-import { getMainMenu, mainMenuMessage, MAIN, LESSONS, ASK, CONTACT } from "../menus/main.menu";
+import {
+  getMainMenu,
+  mainMenuMessage,
+  MAIN,
+  LESSONS,
+  ASK,
+  CONTACT,
+  MAIN_CUSTOM_PREFIX,
+} from "../menus/main.menu";
 import {
   getLessonsMenu,
   getLessonsMenuForTopic,
   getLessonLabel,
-  lessonsMenuMessage,
+  getLessonsMenuMessage,
   parseLessonCallback,
   LESSONS_BACK,
 } from "../menus/lessons.menu";
 import {
   getAskMenu,
   getAskMenuForTopic,
-  askMenuMessage,
+  getAskMenuMessage,
   parseFaqCallback,
   getFaqLabel,
   ASK_CUSTOM,
@@ -40,7 +53,7 @@ export function registerCallbacks(bot: {
   bot.action(LESSONS, async (ctx) => {
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
-      await ctx.editMessageText(lessonsMenuMessage, {
+      await ctx.editMessageText(getLessonsMenuMessage(), {
         parse_mode: "HTML",
         ...getLessonsMenu(),
       });
@@ -60,7 +73,7 @@ export function registerCallbacks(bot: {
       await ctx.answerCbQuery();
       const raw = getLesson(key);
       const content = escapeForTelegramHtml(stripHtml(raw));
-      const breadcrumb = `🎶 Об уроках → ${getLessonLabel(key)}`;
+      const breadcrumb = `🎶 ${getMainSectionLabel("lessons")} → ${getLessonLabel(key)}`;
       await ctx.editMessageText(`${breadcrumb}\n\n${content}`, {
         parse_mode: "HTML",
         ...getLessonsMenuForTopic(),
@@ -71,7 +84,7 @@ export function registerCallbacks(bot: {
   bot.action(LESSONS_BACK, async (ctx) => {
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
-      await ctx.editMessageText(lessonsMenuMessage, {
+      await ctx.editMessageText(getLessonsMenuMessage(), {
         parse_mode: "HTML",
         ...getLessonsMenu(),
       });
@@ -82,7 +95,7 @@ export function registerCallbacks(bot: {
   bot.action(ASK, async (ctx) => {
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
-      await ctx.editMessageText(askMenuMessage, {
+      await ctx.editMessageText(getAskMenuMessage(), {
         parse_mode: "HTML",
         ...getAskMenu(),
       });
@@ -102,7 +115,7 @@ export function registerCallbacks(bot: {
       await ctx.answerCbQuery();
       const raw = getFaq(key);
       const content = escapeForTelegramHtml(stripHtml(raw));
-      const breadcrumb = `❓ Задать вопрос → ${getFaqLabel(key)}`;
+      const breadcrumb = `❓ ${getMainSectionLabel("ask")} → ${getFaqLabel(key)}`;
       await ctx.editMessageText(`${breadcrumb}\n\n${content}`, {
         parse_mode: "HTML",
         ...getAskMenuForTopic(),
@@ -128,7 +141,7 @@ export function registerCallbacks(bot: {
   bot.action(ASK_BACK, async (ctx) => {
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
-      await ctx.editMessageText(askMenuMessage, {
+      await ctx.editMessageText(getAskMenuMessage(), {
         parse_mode: "HTML",
         ...getAskMenu(),
       });
@@ -140,8 +153,9 @@ export function registerCallbacks(bot: {
       await ctx.answerCbQuery();
       const telegramUrl = `https://t.me/${contact.telegramUsername}`;
       const emailText = `📧 <b>Email</b>\n${contact.email}`;
+      const contactTitle = getMainSectionLabel("contact");
       await ctx.editMessageText(
-        `👋 <b>Связаться с преподавателем</b>\n\n` +
+        `👋 <b>${contactTitle}</b>\n\n` +
           `• <a href="${telegramUrl}">Telegram</a>\n` +
           `• <a href="${contact.instagramUrl}">Instagram</a>\n\n` +
           emailText,
@@ -150,6 +164,26 @@ export function registerCallbacks(bot: {
           ...Markup.inlineKeyboard([[Markup.button.callback("◀️ Назад", MAIN)]]),
         }
       );
+    });
+  });
+
+  bot.action(new RegExp(`^${MAIN_CUSTOM_PREFIX}`), async (ctx) => {
+    await withErrorHandling(ctx, async () => {
+      const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+      const data = cq && "data" in cq ? cq.data : undefined;
+      if (!data) return;
+      const key = data.slice(MAIN_CUSTOM_PREFIX.length);
+      const content = getCustomMainSectionContent(key);
+      if (!content) {
+        await ctx.answerCbQuery();
+        return;
+      }
+      await ctx.answerCbQuery();
+      const plain = escapeForTelegramHtml(stripHtml(content));
+      await ctx.editMessageText(plain, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([[Markup.button.callback("◀️ Назад", MAIN)]]),
+      });
     });
   });
 }

@@ -3,7 +3,7 @@ import {
   parseFaqCallback,
   getAskMenu,
   getAskMenuForTopic,
-  askMenuMessage,
+  getAskMenuMessage,
   ASK_CUSTOM,
   ASK_BACK,
 } from "../ask.menu";
@@ -35,10 +35,11 @@ describe("ask.menu", () => {
     });
   });
 
-  describe("askMenuMessage", () => {
+  describe("getAskMenuMessage", () => {
     it("contains expected text", () => {
-      expect(askMenuMessage).toContain("Задать вопрос");
-      expect(askMenuMessage).toContain("Выберите вопрос");
+      const msg = getAskMenuMessage();
+      expect(msg).toContain("Задать вопрос");
+      expect(msg).toContain("Выберите вопрос");
     });
   });
 

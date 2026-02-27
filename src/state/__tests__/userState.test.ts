@@ -36,6 +36,16 @@ describe("userState", () => {
     expect(getState(userId)).toEqual({ type: "awaiting_edit_faq_label", key: "amITooOld" });
   });
 
+  it("returns set state for awaiting_edit_main_section_label", () => {
+    setState(userId, { type: "awaiting_edit_main_section_label", key: "lessons" });
+    expect(getState(userId)).toEqual({ type: "awaiting_edit_main_section_label", key: "lessons" });
+  });
+
+  it("returns set state for awaiting_new_main_section_content", () => {
+    setState(userId, { type: "awaiting_new_main_section_content", label: "Расписание" });
+    expect(getState(userId)).toEqual({ type: "awaiting_new_main_section_content", label: "Расписание" });
+  });
+
   it("returns set state for awaiting_add_admin", () => {
     setState(userId, { type: "awaiting_add_admin" });
     expect(getState(userId)).toEqual({ type: "awaiting_add_admin" });
