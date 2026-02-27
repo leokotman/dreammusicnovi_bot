@@ -1,7 +1,5 @@
 {
   "functions": {
-    "api/webhook.ts": {
-      "includeFiles": "content/**"
-    }
+    "api/webhook.ts": { "includeFiles": "content/**" }
   }
 }

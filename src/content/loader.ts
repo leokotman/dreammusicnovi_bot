@@ -5,11 +5,14 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { loadSavedContent, saveSavedContent, type SavedContentData } from "../storage";
+import { loadSavedContent, saveSavedContent, type SavedContentData, type SectionDef } from "../storage";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const CONTENT_LESSONS = path.join(PROJECT_ROOT, "content", "lessons");
 const CONTENT_FAQ = path.join(PROJECT_ROOT, "content", "faq");
+
+/** Default section ids used when seeding (single tier; no "main" vs "custom"). */
+export const DEFAULT_SECTION_IDS = ["lessons", "ask", "contact"] as const;
 
 export const LESSON_KEYS = [
   "price",
@@ -43,18 +46,93 @@ const FIXED_FAQ_LABELS: Record<string, string> = {
   noEarForMusic: "У меня нет слуха — получится ли?",
 };
 
-/** Fixed main menu section ids and default labels. */
-export const MAIN_SECTION_IDS = ["lessons", "ask", "contact"] as const;
-const DEFAULT_MAIN_SECTION_LABELS: Record<string, string> = {
+const DEFAULT_SECTION_LABELS: Record<string, string> = {
   lessons: "Об уроках",
   ask: "Задать вопрос",
   contact: "Связаться с преподавателем",
 };
 
+/** Months after which deleted sections are purged from storage. */
+export const DELETED_SECTION_RETENTION_MONTHS = 3;
+
 let savedContent: SavedContentData = {};
 
 const hiddenLessonKeys = (): string[] => savedContent.hiddenLessonKeys ?? [];
 const hiddenFaqKeys = (): string[] => savedContent.hiddenFaqKeys ?? [];
+
+const hiddenSectionIds = (): string[] => savedContent.hiddenSectionIds ?? [];
+
+function getSectionsMap(): Record<string, SectionDef> {
+  return savedContent.sections ?? {};
+}
+
+function getSectionOrder(): string[] {
+  return savedContent.sectionOrder ?? [];
+}
+
+/** Migrate legacy mainSectionLabels/customMainSections to unified sections/sectionOrder/hiddenSectionIds/deletedSections. Exported for one-time Blob migration script. */
+export function migrateToUnifiedSections(data: SavedContentData): SavedContentData {
+  const hasLegacy =
+    (data.mainSectionLabels && Object.keys(data.mainSectionLabels).length > 0) ||
+    (data.customMainSections && Object.keys(data.customMainSections).length > 0) ||
+    (data.customMainSectionOrder && data.customMainSectionOrder.length > 0) ||
+    (data.hiddenMainSectionIds && data.hiddenMainSectionIds.length > 0);
+  if (!hasLegacy && data.sectionOrder && data.sectionOrder.length > 0) return data;
+
+  const sections: Record<string, SectionDef> = { ...(data.sections ?? {}) };
+  const order: string[] = [...(data.sectionOrder ?? [])];
+  const hidden: string[] = [...(data.hiddenSectionIds ?? [])];
+  const deleted: Record<string, { dateDeleted: string }> = { ...(data.deletedSections ?? {}) };
+  const now = new Date().toISOString();
+
+  if (data.mainSectionLabels || data.customMainSections || data.customMainSectionOrder) {
+    const defaultIds = [...DEFAULT_SECTION_IDS];
+    for (const id of defaultIds) {
+      if (!(id in sections)) {
+        sections[id] = {
+          label: data.mainSectionLabels?.[id] ?? DEFAULT_SECTION_LABELS[id] ?? id,
+          type: id as "lessons" | "ask" | "contact",
+        };
+      } else if (data.mainSectionLabels?.[id]) {
+        sections[id] = { ...sections[id], label: data.mainSectionLabels[id] };
+      }
+      if (!order.includes(id)) order.push(id);
+    }
+    const customOrder = data.customMainSectionOrder ?? [];
+    const customSections = data.customMainSections ?? {};
+    for (const key of customOrder) {
+      const s = customSections[key];
+      if (!s) continue;
+      if ("subItems" in s && s.subItems != null) {
+        sections[key] = { label: s.label, type: "nested", subItems: s.subItems, subItemOrder: s.subItemOrder ?? Object.keys(s.subItems) };
+      } else {
+        sections[key] = { label: s.label, type: "flat", content: (s as { content?: string }).content ?? "" };
+      }
+      if (!order.includes(key)) order.push(key);
+    }
+  }
+
+  if (data.hiddenMainSectionIds?.length) {
+    for (const id of data.hiddenMainSectionIds) {
+      if (!hidden.includes(id)) hidden.push(id);
+      if (!deleted[id]) deleted[id] = { dateDeleted: now };
+    }
+  }
+
+  if (order.length === 0 && Object.keys(sections).length === 0) {
+    for (const id of DEFAULT_SECTION_IDS) {
+      order.push(id);
+      sections[id] = { label: DEFAULT_SECTION_LABELS[id], type: id as "lessons" | "ask" | "contact" };
+    }
+  }
+
+  const out: SavedContentData = { ...data, sections, sectionOrder: order, hiddenSectionIds: hidden.length ? hidden : undefined, deletedSections: Object.keys(deleted).length ? deleted : undefined };
+  delete (out as Record<string, unknown>).mainSectionLabels;
+  delete (out as Record<string, unknown>).customMainSections;
+  delete (out as Record<string, unknown>).customMainSectionOrder;
+  delete (out as Record<string, unknown>).hiddenMainSectionIds;
+  return out;
+}
 
 export function getAllLessonKeys(): string[] {
   const fixed = [...LESSON_KEYS].filter((k) => !hiddenLessonKeys().includes(k));
@@ -84,75 +162,81 @@ export function getFaqLabel(key: string): string {
   return savedContent.faqLabelOverrides?.[key] ?? FIXED_FAQ_LABELS[key] ?? savedContent.customFaqLabels?.[key] ?? key;
 }
 
-export function getMainSectionLabel(id: string): string {
-  return savedContent.mainSectionLabels?.[id] ?? DEFAULT_MAIN_SECTION_LABELS[id] ?? id;
+/** Section label (single-tier sections). */
+export function getSectionLabel(id: string): string {
+  const s = getSectionsMap()[id];
+  if (s) return s.label;
+  return DEFAULT_SECTION_LABELS[id] ?? id;
 }
 
-const hiddenMainSectionIds = (): string[] => savedContent.hiddenMainSectionIds ?? [];
-
-/** Ordered list of main menu section ids: fixed three then custom (hidden main sections excluded). */
-export function getMainMenuSectionIds(): string[] {
-  const fixed = [...MAIN_SECTION_IDS].filter((id) => !hiddenMainSectionIds().includes(id));
-  const customOrder = savedContent.customMainSectionOrder ?? [];
-  return [...fixed, ...customOrder];
+/** Ordered list of section ids visible in menu (hidden excluded). */
+export function getVisibleSectionIds(): string[] {
+  const order = getSectionOrder();
+  const hidden = hiddenSectionIds();
+  return order.filter((id) => !hidden.includes(id));
 }
 
-type CustomMainSection =
-  | { label: string; content: string }
-  | { label: string; subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] };
-
-function getCustomSection(sectionKey: string): CustomMainSection | undefined {
-  const sections = savedContent.customMainSections ?? {};
-  return sections[sectionKey] as CustomMainSection | undefined;
+function getSection(sectionKey: string): SectionDef | undefined {
+  return getSectionsMap()[sectionKey];
 }
 
-function isNestedSection(section: CustomMainSection): section is { label: string; subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] } {
+function isSectionNestedDef(section: SectionDef): section is SectionDef & { subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] } {
   return "subItems" in section && section.subItems != null;
 }
 
-export function getCustomMainSections(): { key: string; label: string; content: string }[] {
-  const order = savedContent.customMainSectionOrder ?? [];
-  const sections = savedContent.customMainSections ?? {};
+/** All sections in display order (for admin). Returns { key, label, content } for compatibility. */
+export function getSections(): { key: string; label: string; content: string }[] {
+  const order = getSectionOrder();
+  const sections = getSectionsMap();
   return order
     .filter((key) => sections[key])
     .map((key) => {
-      const s = sections[key] as CustomMainSection;
-      const content = "content" in s ? s.content : "";
-      return { key, label: s.label, content };
+      const s = sections[key];
+      const content = (s && "content" in s ? s.content : "") ?? "";
+      return { key, label: s?.label ?? key, content };
     });
 }
 
-export function getCustomMainSectionContent(key: string): string | null {
-  const section = getCustomSection(key);
-  if (!section) return null;
-  if (isNestedSection(section)) return null;
-  return section.content ?? null;
+export function getSectionContent(key: string): string | null {
+  const section = getSection(key);
+  if (!section || "subItems" in section) return null;
+  return "content" in section ? section.content ?? null : null;
 }
 
-/** True if custom section has sub-items (nested). */
-export function isCustomSectionNested(sectionKey: string): boolean {
-  const section = getCustomSection(sectionKey);
-  return section != null && isNestedSection(section);
+/** True if section has sub-items (nested). */
+export function isSectionNested(sectionKey: string): boolean {
+  const section = getSection(sectionKey);
+  return section != null && isSectionNestedDef(section);
 }
 
-/** Ordered sub-item keys for a nested custom section. */
-export function getCustomMainSectionSubIds(sectionKey: string): string[] {
-  const section = getCustomSection(sectionKey);
-  if (!section || !isNestedSection(section)) return [];
+/** Ordered sub-item keys for a nested section. */
+export function getSectionSubIds(sectionKey: string): string[] {
+  const section = getSection(sectionKey);
+  if (!section || !isSectionNestedDef(section)) return [];
   return section.subItemOrder ?? Object.keys(section.subItems);
 }
 
-export function getCustomMainSectionSubItem(sectionKey: string, itemKey: string): { label: string; content: string } | null {
-  const section = getCustomSection(sectionKey);
-  if (!section || !isNestedSection(section)) return null;
+export function getSectionSubItem(sectionKey: string, itemKey: string): { label: string; content: string } | null {
+  const section = getSection(sectionKey);
+  if (!section || !isSectionNestedDef(section)) return null;
   const item = section.subItems[itemKey];
   return item ?? null;
 }
 
 /** Load saved content from storage (Blob or fs) into memory. Call at start of each webhook request so edits persist. */
 export async function ensureSavedContentLoaded(): Promise<void> {
-  const data = await loadSavedContent();
-  savedContent = data ?? {};
+  const raw = await loadSavedContent();
+  const data = raw ?? {};
+  const hadLegacy = !!(
+    (data.mainSectionLabels && Object.keys(data.mainSectionLabels).length > 0) ||
+    (data.customMainSections && Object.keys(data.customMainSections).length > 0) ||
+    (data.customMainSectionOrder && data.customMainSectionOrder.length > 0) ||
+    (data.hiddenMainSectionIds && data.hiddenMainSectionIds.length > 0)
+  );
+  const migrated = migrateToUnifiedSections(data);
+  savedContent = migrated;
+  const needsSave = hadLegacy || (!(raw?.sectionOrder?.length) && (migrated.sectionOrder?.length ?? 0) > 0);
+  if (needsSave) await saveSavedContent(migrated);
 }
 
 function readHtmlFile(dir: string, key: string): string {
@@ -210,59 +294,63 @@ export async function setSavedFaqLabel(key: string, label: string): Promise<void
   await saveSavedContent(savedContent);
 }
 
-/** Save the display label for a main menu section (lessons, ask, contact). */
-export async function setSavedMainSectionLabel(id: string, label: string): Promise<void> {
+/** Save the display label for a section. */
+export async function setSectionLabel(id: string, label: string): Promise<void> {
   const data = await loadSavedContent();
-  const current = data ?? {};
-  const labels = { ...(current.mainSectionLabels ?? {}), [id]: label.trim() };
-  savedContent = { ...current, mainSectionLabels: labels };
+  const current = migrateToUnifiedSections(data ?? {});
+  const sectionsMap = current.sections ?? {};
+  const section = sectionsMap[id] ?? (DEFAULT_SECTION_IDS.includes(id as (typeof DEFAULT_SECTION_IDS)[number]) ? { label: DEFAULT_SECTION_LABELS[id], type: id as "lessons" | "ask" | "contact" } : undefined);
+  if (!section) return;
+  const updated = { ...section, label: label.trim() };
+  const sections = { ...sectionsMap, [id]: updated };
+  savedContent = { ...current, sections };
   await saveSavedContent(savedContent);
 }
 
-/** Add a new custom main menu section (flat: label + content). Returns the new key. */
-export async function addCustomMainSection(label: string, content: string): Promise<string> {
-  const key = slugFromLabelForMain(label);
+/** Add a new flat section (label + content). Returns the new key. */
+export async function addSection(label: string, content: string): Promise<string> {
+  const key = slugFromLabelForSection(label);
   const data = await loadSavedContent();
-  const current = data ?? {};
-  const sections = { ...(current.customMainSections ?? {}), [key]: { label: label.trim(), content: content.trim() } };
-  const order = [...(current.customMainSectionOrder ?? [])];
+  const current = migrateToUnifiedSections(data ?? {});
+  const sections: Record<string, SectionDef> = { ...(current.sections ?? {}), [key]: { label: label.trim(), type: "flat", content: content.trim() } };
+  const order = [...(current.sectionOrder ?? [])];
   if (!order.includes(key)) order.push(key);
-  savedContent = { ...current, customMainSections: sections, customMainSectionOrder: order };
+  savedContent = { ...current, sections, sectionOrder: order };
   await saveSavedContent(savedContent);
   return key;
 }
 
-/** Create a nested custom main section (no content yet). Returns the new section key. */
-export async function createCustomMainSectionNested(label: string): Promise<string> {
-  const key = slugFromLabelForMain(label);
+/** Create a nested section (no content yet). Returns the new section key. */
+export async function addSectionNested(label: string): Promise<string> {
+  const key = slugFromLabelForSection(label);
   const data = await loadSavedContent();
-  const current = data ?? {};
-  const sections = {
-    ...(current.customMainSections ?? {}),
-    [key]: { label: label.trim(), subItems: {} as Record<string, { label: string; content: string }>, subItemOrder: [] as string[] },
+  const current = migrateToUnifiedSections(data ?? {});
+  const sections: Record<string, SectionDef> = {
+    ...(current.sections ?? {}),
+    [key]: { label: label.trim(), type: "nested", subItems: {} as Record<string, { label: string; content: string }>, subItemOrder: [] as string[] },
   };
-  const order = [...(current.customMainSectionOrder ?? [])];
+  const order = [...(current.sectionOrder ?? [])];
   if (!order.includes(key)) order.push(key);
-  savedContent = { ...current, customMainSections: sections, customMainSectionOrder: order };
+  savedContent = { ...current, sections, sectionOrder: order };
   await saveSavedContent(savedContent);
   return key;
 }
 
-/** Add a sub-item to a nested custom main section. Returns the new item key. */
-export async function addCustomMainSectionSubItem(sectionKey: string, itemLabel: string, content: string): Promise<string> {
-  const section = getCustomSection(sectionKey);
-  if (!section || !isNestedSection(section)) throw new Error("Section is not nested");
+/** Add a sub-item to a nested section. Returns the new item key. */
+export async function addSectionSubItem(sectionKey: string, itemLabel: string, content: string): Promise<string> {
+  const section = getSection(sectionKey);
+  if (!section || !isSectionNestedDef(section)) throw new Error("Section is not nested");
   const existingKeys = section.subItemOrder ?? Object.keys(section.subItems);
   const itemKey = slugForSubItem(itemLabel, existingKeys);
   const data = await loadSavedContent();
-  const current = data ?? {};
-  const sections = current.customMainSections ?? {};
-  const existing = sections[sectionKey] as { label: string; subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] } | undefined;
-  if (!existing || !("subItems" in existing)) throw new Error("Section not found or not nested");
+  const current = migrateToUnifiedSections(data ?? {});
+  const sectionsMap = current.sections ?? {};
+  const existing = sectionsMap[sectionKey];
+  if (!existing || !isSectionNestedDef(existing)) throw new Error("Section not found or not nested");
   const subItems = { ...existing.subItems, [itemKey]: { label: itemLabel.trim(), content: content.trim() } };
   const subItemOrder = [...(existing.subItemOrder ?? []), itemKey];
-  const newSections = { ...sections, [sectionKey]: { ...existing, subItems, subItemOrder } };
-  savedContent = { ...current, customMainSections: newSections };
+  const newSections: Record<string, SectionDef> = { ...sectionsMap, [sectionKey]: { ...existing, subItems, subItemOrder } };
+  savedContent = { ...current, sections: newSections };
   await saveSavedContent(savedContent);
   return itemKey;
 }
@@ -276,42 +364,30 @@ function slugForSubItem(label: string, existingKeys: string[]): string {
   return key;
 }
 
-/** Remove a custom main section and all its content/sub-items. */
-export async function removeCustomMainSection(sectionKey: string): Promise<void> {
-  const data = await loadSavedContent();
-  const current = data ?? {};
-  const sections = { ...(current.customMainSections ?? {}) };
-  if (!(sectionKey in sections)) return;
-  delete sections[sectionKey];
-  const order = (current.customMainSectionOrder ?? []).filter((k) => k !== sectionKey);
-  savedContent = { ...current, customMainSections: sections, customMainSectionOrder: order };
-  await saveSavedContent(savedContent);
-}
-
-/** Update the display label of a custom main section. */
-export async function setSavedCustomMainSectionLabel(sectionKey: string, label: string): Promise<void> {
-  const data = await loadSavedContent();
-  const current = data ?? {};
-  const sections = current.customMainSections ?? {};
-  const section = sections[sectionKey] as CustomMainSection | undefined;
-  if (!section) return;
-  const updated = { ...section, label: label.trim() };
-  const newSections = { ...sections, [sectionKey]: updated };
-  savedContent = { ...current, customMainSections: newSections };
-  await saveSavedContent(savedContent);
-}
-
-/** Slug for custom main section; prefix to avoid clash with lesson/faq keys. */
-function slugFromLabelForMain(label: string): string {
+/** Slug for section; prefix to avoid clash with default ids. */
+function slugFromLabelForSection(label: string): string {
   const base = transliterateCyrillicToLatin(label.trim()).replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
-  if (!base) return "main_custom_" + Date.now();
-  const prefix = "main_";
-  const order = savedContent.customMainSectionOrder ?? [];
-  const sections = savedContent.customMainSections ?? {};
+  if (!base) return "sec_" + Date.now();
+  const prefix = "sec_";
+  const order = savedContent.sectionOrder ?? [];
+  const sections = savedContent.sections ?? {};
   let key = prefix + base;
   let n = 0;
   while (sections[key] || order.includes(key)) key = `${prefix}${base}_${++n}`;
   return key;
+}
+
+/** Hide a section from the menu (soft delete). Stores dateDeleted for 3-month purge. */
+export async function hideSection(sectionKey: string): Promise<void> {
+  const data = await loadSavedContent();
+  const current = migrateToUnifiedSections(data ?? {});
+  const sections = getSectionsMap();
+  if (!(sectionKey in sections)) return;
+  const hidden = [...(current.hiddenSectionIds ?? [])];
+  if (!hidden.includes(sectionKey)) hidden.push(sectionKey);
+  const deleted = { ...(current.deletedSections ?? {}), [sectionKey]: { dateDeleted: new Date().toISOString() } };
+  savedContent = { ...current, hiddenSectionIds: hidden, deletedSections: deleted };
+  await saveSavedContent(savedContent);
 }
 
 /** Add a new lesson section (label + content). Returns the new key. */
@@ -386,23 +462,29 @@ export async function removeCustomFaq(key: string): Promise<void> {
   await saveSavedContent(savedContent);
 }
 
-/** Hide a main section (lessons, ask, contact) from the main menu. */
-export async function addHiddenMainSectionId(id: string): Promise<void> {
-  if (!MAIN_SECTION_IDS.includes(id as (typeof MAIN_SECTION_IDS)[number])) return;
+/** Hide a section from the menu (soft delete). Sets dateDeleted for runner purge. */
+export async function addHiddenSectionId(id: string): Promise<void> {
   const data = await loadSavedContent();
-  const current = data ?? {};
-  const hidden = [...(current.hiddenMainSectionIds ?? [])];
+  const current = migrateToUnifiedSections(data ?? {});
+  const hidden = [...(current.hiddenSectionIds ?? [])];
   if (!hidden.includes(id)) hidden.push(id);
-  savedContent = { ...current, hiddenMainSectionIds: hidden };
+  const deleted = { ...(current.deletedSections ?? {}), [id]: { dateDeleted: new Date().toISOString() } };
+  savedContent = { ...current, hiddenSectionIds: hidden, deletedSections: deleted };
   await saveSavedContent(savedContent);
 }
 
-/** Restore a hidden main section to the main menu. */
-export async function removeHiddenMainSectionId(id: string): Promise<void> {
+/** Restore a hidden section to the menu. Removes from deletedSections. */
+export async function removeHiddenSectionId(id: string): Promise<void> {
   const data = await loadSavedContent();
-  const current = data ?? {};
-  const hidden = (current.hiddenMainSectionIds ?? []).filter((x) => x !== id);
-  savedContent = { ...current, hiddenMainSectionIds: hidden.length ? hidden : undefined };
+  const current = migrateToUnifiedSections(data ?? {});
+  const hidden = (current.hiddenSectionIds ?? []).filter((x) => x !== id);
+  const deleted = { ...(current.deletedSections ?? {}) };
+  delete deleted[id];
+  savedContent = {
+    ...current,
+    hiddenSectionIds: hidden.length ? hidden : undefined,
+    deletedSections: Object.keys(deleted).length ? deleted : undefined,
+  };
   await saveSavedContent(savedContent);
 }
 
@@ -424,9 +506,9 @@ export async function removeHiddenFaqKey(key: string): Promise<void> {
   await saveSavedContent(savedContent);
 }
 
-/** Ids of main sections currently hidden from the main menu. */
-export function getHiddenMainSectionIds(): string[] {
-  return [...(savedContent.hiddenMainSectionIds ?? [])];
+/** Ids of sections currently hidden from the menu (restorable until purged). */
+export function getHiddenSectionIds(): string[] {
+  return [...(savedContent.hiddenSectionIds ?? [])];
 }
 
 /** Keys of lesson topics currently hidden from «Об уроках». */
@@ -439,20 +521,20 @@ export function getHiddenFaqKeys(): string[] {
   return [...(savedContent.hiddenFaqKeys ?? [])];
 }
 
-/** Remove a sub-item from a nested custom main section. */
-export async function removeCustomMainSectionSubItem(sectionKey: string, itemKey: string): Promise<void> {
-  const section = getCustomSection(sectionKey);
-  if (!section || !isNestedSection(section)) return;
+/** Remove a sub-item from a nested section. */
+export async function removeSectionSubItem(sectionKey: string, itemKey: string): Promise<void> {
+  const section = getSection(sectionKey);
+  if (!section || !isSectionNestedDef(section)) return;
   const data = await loadSavedContent();
   const current = data ?? {};
-  const sections = current.customMainSections ?? {};
-  const existing = sections[sectionKey] as { label: string; subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] } | undefined;
-  if (!existing || !("subItems" in existing)) return;
+  const sectionsMap = current.sections ?? {};
+  const existing = sectionsMap[sectionKey];
+  if (!existing || !isSectionNestedDef(existing)) return;
   const subItems = { ...existing.subItems };
   delete subItems[itemKey];
   const subItemOrder = (existing.subItemOrder ?? []).filter((k) => k !== itemKey);
-  const newSections = { ...sections, [sectionKey]: { ...existing, subItems, subItemOrder } };
-  savedContent = { ...current, customMainSections: newSections };
+  const newSections = { ...sectionsMap, [sectionKey]: { ...existing, subItems, subItemOrder } };
+  savedContent = { ...current, sections: newSections };
   await saveSavedContent(savedContent);
 }
 
@@ -485,6 +567,41 @@ function slugFromLabel(label: string): string {
   return key;
 }
 
+/** Purge sections that were deleted more than DELETED_SECTION_RETENTION_MONTHS ago. Call from cron/runner. */
+export async function purgeDeletedSectionsOlderThanThreeMonths(): Promise<{ purged: string[] }> {
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const deleted = current.deletedSections ?? {};
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setMonth(cutoff.getMonth() - DELETED_SECTION_RETENTION_MONTHS);
+  const cutoffIso = cutoff.toISOString();
+  const toPurge: string[] = [];
+  for (const [id, entry] of Object.entries(deleted)) {
+    if (entry.dateDeleted <= cutoffIso) toPurge.push(id);
+  }
+  if (toPurge.length === 0) {
+    return { purged: [] };
+  }
+  const sections = { ...(current.sections ?? {}) };
+  const order = (current.sectionOrder ?? []).filter((id) => !toPurge.includes(id));
+  const hidden = (current.hiddenSectionIds ?? []).filter((id) => !toPurge.includes(id));
+  const newDeleted = { ...deleted };
+  for (const id of toPurge) {
+    delete sections[id];
+    delete newDeleted[id];
+  }
+  savedContent = {
+    ...current,
+    sections,
+    sectionOrder: order,
+    hiddenSectionIds: hidden.length ? hidden : undefined,
+    deletedSections: Object.keys(newDeleted).length ? newDeleted : undefined,
+  };
+  await saveSavedContent(savedContent);
+  return { purged: toPurge };
+}
+
 /** Replace all saved content in memory and persist (used by tests). */
 export async function replaceSavedContent(data: SavedContentData): Promise<void> {
   savedContent = data;
@@ -503,7 +620,7 @@ export function initContent(): void {
     process.env.BLOB_READ_WRITE_TOKEN.length === 0
   ) {
     const data = getSavedContentSync();
-    savedContent = data ?? {};
+    savedContent = migrateToUnifiedSections(data ?? {});
   }
 }
 

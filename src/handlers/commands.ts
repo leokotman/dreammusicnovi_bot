@@ -1,5 +1,5 @@
 import type { Context } from "telegraf";
-import { getMainSectionLabel } from "../content/loader";
+import { getSectionLabel } from "../content/loader";
 import { getMainMenu, mainMenuMessage } from "../menus/main.menu";
 import { withErrorHandling } from "../middleware/errorHandler";
 
@@ -15,9 +15,9 @@ export function registerCommands(bot: {
 
   bot.help(async (ctx) => {
     await withErrorHandling(ctx, async () => {
-      const lessonsLabel = getMainSectionLabel("lessons");
-      const askLabel = getMainSectionLabel("ask");
-      const contactLabel = getMainSectionLabel("contact");
+      const lessonsLabel = getSectionLabel("lessons");
+      const askLabel = getSectionLabel("ask");
+      const contactLabel = getSectionLabel("contact");
       const helpText =
         "👋 <b>Здравствуйте!</b>\n\n" +
         "Это бот для тех, кто интересуется занятиями по вокалу и фортепиано. " +

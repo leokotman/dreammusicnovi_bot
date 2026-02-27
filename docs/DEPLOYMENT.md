@@ -81,3 +81,17 @@ For **Vercel** also set **WEBHOOK_SET_SECRET** (optional): a secret string you u
 3. If `TEACHER_USER_ID` is set, send `/admin` — editing menu opens.
 
 **Long polling (Railway/Render):** Logs should show `DreamMusic bot is running (long polling).` **Vercel:** No long-running process; check the function logs in the Vercel dashboard if something fails.
+
+Deleted (hidden) menu sections are kept in storage for **3 months** and can be restored from «Восстановить удалённые разделы» in admin. When an admin opens that screen, the app first purges sections whose `dateDeleted` is older than 3 months, then shows the list of what can still be restored. No cron or CRON_SECRET needed.
+
+---
+
+## One-time Blob migration (unified sections)
+
+If your Blob was created before the unified-sections refactor, it may still contain legacy keys (`mainSectionLabels`, `customMainSections`, `customMainSectionOrder`, `hiddenMainSectionIds`). The app migrates on load and saves the new shape when you edit. To rewrite the Blob once with only the new shape, run (from repo root):
+
+```bash
+BLOB_READ_WRITE_TOKEN=<your-vercel-blob-token> npx ts-node scripts/migrate-blob-to-unified-sections.ts
+```
+
+You can copy the token from Vercel → Project → Storage → Blob → .env.local or Environment Variables. The script reads the current Blob, converts to `sections` / `sectionOrder` / `hiddenSectionIds` / `deletedSections`, and writes it back.

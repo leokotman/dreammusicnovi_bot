@@ -7,34 +7,34 @@ jest.mock("../../content/loader", () => ({
   setSavedFaqContent: jest.fn().mockResolvedValue(undefined),
   setSavedLessonLabel: jest.fn().mockResolvedValue(undefined),
   setSavedFaqLabel: jest.fn().mockResolvedValue(undefined),
-  setSavedMainSectionLabel: jest.fn().mockResolvedValue(undefined),
+  setSectionLabel: jest.fn().mockResolvedValue(undefined),
   getLessonLabel: jest.fn((key: string) => `Label-${key}`),
   getFaqLabel: jest.fn((key: string) => `Faq-${key}`),
+  getSectionLabel: jest.fn((id: string) => `Section-${id}`),
   addCustomLesson: jest.fn().mockResolvedValue("new_lesson_key"),
   addCustomFaq: jest.fn().mockResolvedValue("new_faq_key"),
-  addCustomMainSection: jest.fn().mockResolvedValue("main_custom_1"),
-  createCustomMainSectionNested: jest.fn().mockResolvedValue("main_raspisaniye"),
-  addCustomMainSectionSubItem: jest.fn().mockResolvedValue("item_1"),
-  removeCustomMainSection: jest.fn().mockResolvedValue(undefined),
-  setSavedCustomMainSectionLabel: jest.fn().mockResolvedValue(undefined),
+  addSection: jest.fn().mockResolvedValue("sec_1"),
+  addSectionNested: jest.fn().mockResolvedValue("sec_raspisaniye"),
+  addSectionSubItem: jest.fn().mockResolvedValue("item_1"),
+  hideSection: jest.fn().mockResolvedValue(undefined),
+  removeSectionSubItem: jest.fn().mockResolvedValue(undefined),
   addHiddenLessonKey: jest.fn().mockResolvedValue(undefined),
   removeCustomLesson: jest.fn().mockResolvedValue(undefined),
   addHiddenFaqKey: jest.fn().mockResolvedValue(undefined),
   removeCustomFaq: jest.fn().mockResolvedValue(undefined),
-  addHiddenMainSectionId: jest.fn().mockResolvedValue(undefined),
-  removeHiddenMainSectionId: jest.fn().mockResolvedValue(undefined),
+  addHiddenSectionId: jest.fn().mockResolvedValue(undefined),
+  removeHiddenSectionId: jest.fn().mockResolvedValue(undefined),
   removeHiddenLessonKey: jest.fn().mockResolvedValue(undefined),
   removeHiddenFaqKey: jest.fn().mockResolvedValue(undefined),
-  getHiddenMainSectionIds: jest.fn().mockReturnValue([]),
+  getHiddenSectionIds: jest.fn().mockReturnValue([]),
   getHiddenLessonKeys: jest.fn().mockReturnValue([]),
   getHiddenFaqKeys: jest.fn().mockReturnValue([]),
-  removeCustomMainSectionSubItem: jest.fn().mockResolvedValue(undefined),
+  getSections: jest.fn().mockReturnValue([]),
+  getSectionSubIds: jest.fn().mockReturnValue([]),
+  getSectionSubItem: jest.fn().mockReturnValue(null),
+  isSectionNested: jest.fn().mockReturnValue(false),
   isLessonKeyFixed: jest.fn((k: string) => ["price", "howLessonsWork", "vocal", "piano", "exercises"].includes(k)),
   isFaqKeyFixed: jest.fn((k: string) => ["amITooOld", "needEducation", "howOftenPractice", "noEarForMusic"].includes(k)),
-  getCustomMainSections: jest.fn().mockReturnValue([]),
-  getCustomMainSectionSubIds: jest.fn().mockReturnValue([]),
-  getCustomMainSectionSubItem: jest.fn().mockReturnValue(null),
-  isCustomSectionNested: jest.fn().mockReturnValue(false),
   getAllLessonKeys: jest.fn().mockReturnValue([]),
   getAllFaqKeys: jest.fn().mockReturnValue([]),
   getLesson: jest.fn(),
@@ -62,9 +62,9 @@ const setSavedLessonContent = loader.setSavedLessonContent as jest.Mock;
 const setSavedFaqContent = loader.setSavedFaqContent as jest.Mock;
 const setSavedLessonLabel = loader.setSavedLessonLabel as jest.Mock;
 const setSavedFaqLabel = loader.setSavedFaqLabel as jest.Mock;
-const setSavedMainSectionLabel = loader.setSavedMainSectionLabel as jest.Mock;
-const addCustomMainSection = loader.addCustomMainSection as jest.Mock;
-const addCustomMainSectionSubItem = loader.addCustomMainSectionSubItem as jest.Mock;
+const setSectionLabel = loader.setSectionLabel as jest.Mock;
+const addSection = loader.addSection as jest.Mock;
+const addSectionSubItem = loader.addSectionSubItem as jest.Mock;
 const getState = userState.getState as jest.Mock;
 const clearState = userState.clearState as jest.Mock;
 const setState = userState.setState as jest.Mock;
@@ -120,11 +120,11 @@ describe("handleAdminEdit", () => {
     expect(reply).toHaveBeenCalledWith("Формулировка вопроса обновлена.");
   });
 
-  it("handles awaiting_edit_main_section_label: calls setSavedMainSectionLabel", async () => {
+  it("handles awaiting_edit_main_section_label: calls setSectionLabel", async () => {
     getState.mockReturnValue({ type: "awaiting_edit_main_section_label", key: "lessons" });
     const result = await handleAdminEdit(userId, "О занятиях", reply);
     expect(result).toBe(true);
-    expect(setSavedMainSectionLabel).toHaveBeenCalledWith("lessons", "О занятиях");
+    expect(setSectionLabel).toHaveBeenCalledWith("lessons", "О занятиях");
     expect(clearState).toHaveBeenCalledWith(userId);
     expect(reply).toHaveBeenCalledWith("Название пункта главного меню обновлено.");
   });
@@ -143,11 +143,11 @@ describe("handleAdminEdit", () => {
     );
   });
 
-  it("handles awaiting_new_main_section_content: calls addCustomMainSection", async () => {
+  it("handles awaiting_new_main_section_content: calls addSection", async () => {
     getState.mockReturnValue({ type: "awaiting_new_main_section_content", label: "Расписание" });
     const result = await handleAdminEdit(userId, "Пн–Пт 10:00–18:00", reply);
     expect(result).toBe(true);
-    expect(addCustomMainSection).toHaveBeenCalledWith("Расписание", "Пн–Пт 10:00–18:00");
+    expect(addSection).toHaveBeenCalledWith("Расписание", "Пн–Пт 10:00–18:00");
     expect(clearState).toHaveBeenCalledWith(userId);
     expect(reply).toHaveBeenCalledWith(expect.stringContaining("добавлен в главное меню"));
   });
@@ -164,7 +164,7 @@ describe("handleAdminEdit", () => {
     expect(reply).toHaveBeenCalledWith(expect.stringContaining("текст подпункта"));
   });
 
-  it("handles awaiting_new_main_section_sub_content: calls addCustomMainSectionSubItem and asks for more or done", async () => {
+  it("handles awaiting_new_main_section_sub_content: calls addSectionSubItem and asks for more or done", async () => {
     getState.mockReturnValue({
       type: "awaiting_new_main_section_sub_content",
       sectionKey: "main_raspisaniye",
@@ -172,7 +172,7 @@ describe("handleAdminEdit", () => {
     });
     const result = await handleAdminEdit(userId, "Занятия с 10:00.", reply);
     expect(result).toBe(true);
-    expect(addCustomMainSectionSubItem).toHaveBeenCalledWith("main_raspisaniye", "Понедельник", "Занятия с 10:00.");
+    expect(addSectionSubItem).toHaveBeenCalledWith("main_raspisaniye", "Понедельник", "Занятия с 10:00.");
     expect(setState).toHaveBeenCalledWith(userId, { type: "awaiting_new_main_section_sub_more", sectionKey: "main_raspisaniye" });
     expect(reply).toHaveBeenCalledWith(
       expect.stringContaining("Подпункт добавлен"),
@@ -192,13 +192,12 @@ describe("handleAdminEdit", () => {
     expect(reply).toHaveBeenCalledWith(expect.stringContaining("текст подпункта"));
   });
 
-  it("handles awaiting_edit_custom_section_label: calls setSavedCustomMainSectionLabel", async () => {
-    const setSavedCustomMainSectionLabel = loader.setSavedCustomMainSectionLabel as jest.Mock;
-    getState.mockReturnValue({ type: "awaiting_edit_custom_section_label", sectionKey: "main_raspisaniye" });
+  it("handles awaiting_edit_main_section_label: calls setSectionLabel for any section key", async () => {
+    getState.mockReturnValue({ type: "awaiting_edit_main_section_label", key: "main_raspisaniye" });
     const result = await handleAdminEdit(userId, "Новое расписание", reply);
     expect(result).toBe(true);
-    expect(setSavedCustomMainSectionLabel).toHaveBeenCalledWith("main_raspisaniye", "Новое расписание");
+    expect(setSectionLabel).toHaveBeenCalledWith("main_raspisaniye", "Новое расписание");
     expect(clearState).toHaveBeenCalledWith(userId);
-    expect(reply).toHaveBeenCalledWith("Название раздела обновлено.");
+    expect(reply).toHaveBeenCalledWith("Название пункта главного меню обновлено.");
   });
 });

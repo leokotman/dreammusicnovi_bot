@@ -1,5 +1,5 @@
 import { Markup } from "telegraf";
-import { getAllLessonKeys, getLessonLabel, getMainSectionLabel } from "../content/loader";
+import { getAllLessonKeys, getLessonLabel, getSectionLabel } from "../content/loader";
 import { MAIN } from "./main.menu";
 
 const LESSONS_PREFIX = "lesson:";
@@ -29,7 +29,7 @@ export function getLessonsMenuForTopic() {
 }
 
 export function getLessonsMenuMessage(): string {
-  return `🎶 <b>${getMainSectionLabel("lessons")}</b>\n\nВыберите тему:`;
+  return `🎶 <b>${getSectionLabel("lessons")}</b>\n\nВыберите тему:`;
 }
 
 export { getLessonLabel };

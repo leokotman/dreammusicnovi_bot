@@ -1,10 +1,9 @@
 import { Markup } from "telegraf";
 import {
-  getMainMenuSectionIds,
-  getMainSectionLabel,
-  getCustomMainSections,
-  getCustomMainSectionSubIds,
-  getCustomMainSectionSubItem,
+  getVisibleSectionIds,
+  getSectionLabel,
+  getSectionSubIds,
+  getSectionSubItem,
 } from "../content/loader";
 import { escapeForTelegramHtml } from "../utils/html";
 
@@ -13,7 +12,7 @@ export const LESSONS = "lessons";
 export const ASK = "ask";
 export const CONTACT = "contact";
 export const MAIN_CUSTOM_PREFIX = "main_custom:";
-/** Callback for nested custom section sub-item: main_sub:sectionKey:itemKey */
+/** Callback for nested section sub-item: main_sub:sectionKey:itemKey */
 export const MAIN_CUSTOM_SUB_PREFIX = "main_sub:";
 
 const SECTION_CALLBACK: Record<string, string> = {
@@ -23,12 +22,10 @@ const SECTION_CALLBACK: Record<string, string> = {
 };
 
 export function getMainMenu() {
-  const ids = getMainMenuSectionIds();
-  const customSections = getCustomMainSections();
+  const ids = getVisibleSectionIds();
   const buttons = ids.map((id, index) => {
     const num = (index + 1).toString() + "️⃣ ";
-    const label =
-      id in SECTION_CALLBACK ? getMainSectionLabel(id) : customSections.find((s) => s.key === id)?.label ?? id;
+    const label = getSectionLabel(id);
     const callbackData = SECTION_CALLBACK[id] ?? `${MAIN_CUSTOM_PREFIX}${id}`;
     return [Markup.button.callback(num + label, callbackData)];
   });
@@ -41,13 +38,12 @@ export const mainMenuMessage = `
 Выберите пункт меню:
 `.trim();
 
-/** Keyboard and message for a nested custom section (list of sub-items). */
+/** Keyboard and message for a nested section (list of sub-items). */
 export function getCustomSectionSubMenu(sectionKey: string) {
-  const subIds = getCustomMainSectionSubIds(sectionKey);
-  const customSections = getCustomMainSections();
-  const sectionLabel = customSections.find((s) => s.key === sectionKey)?.label ?? sectionKey;
+  const subIds = getSectionSubIds(sectionKey);
+  const sectionLabel = getSectionLabel(sectionKey);
   const buttons = subIds.map((itemKey) => {
-    const item = getCustomMainSectionSubItem(sectionKey, itemKey);
+    const item = getSectionSubItem(sectionKey, itemKey);
     const label = item?.label ?? itemKey;
     return [Markup.button.callback(label, `${MAIN_CUSTOM_SUB_PREFIX}${sectionKey}:${itemKey}`)];
   });
@@ -58,7 +54,6 @@ export function getCustomSectionSubMenu(sectionKey: string) {
 }
 
 export function getCustomSectionSubMenuMessage(sectionKey: string): string {
-  const customSections = getCustomMainSections();
-  const sectionLabel = customSections.find((s) => s.key === sectionKey)?.label ?? sectionKey;
+  const sectionLabel = getSectionLabel(sectionKey);
   return `<b>${escapeForTelegramHtml(sectionLabel)}</b>\n\nВыберите пункт:`;
 }

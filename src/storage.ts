@@ -18,6 +18,18 @@ const BLOB_PREFIX = "dreammusic";
 const BLOB_SAVED_CONTENT = `${BLOB_PREFIX}/overrides.json`;
 const BLOB_ADMINS = `${BLOB_PREFIX}/admins.json`;
 
+/** Single-tier section: flat (content) or nested (subItems). type distinguishes built-in behaviour (lessons/ask/contact). */
+export type SectionDef =
+  | { label: string; type?: "lessons" | "ask" | "contact"; content?: never; subItems?: never; subItemOrder?: never }
+  | { label: string; type?: "flat"; content: string; subItems?: never; subItemOrder?: never }
+  | {
+      label: string;
+      type?: "nested";
+      content?: never;
+      subItems: Record<string, { label: string; content: string }>;
+      subItemOrder: string[];
+    };
+
 export type SavedContentData = {
   lessons?: Record<string, string>;
   faq?: Record<string, string>;
@@ -29,24 +41,26 @@ export type SavedContentData = {
   lessonLabelOverrides?: Record<string, string>;
   /** Saved display label for FAQ questions (built-in or custom). */
   faqLabelOverrides?: Record<string, string>;
-  /** Saved labels for main menu sections: lessons, ask, contact. */
+  /** All menu sections (single tier). Order in sectionOrder. */
+  sections?: Record<string, SectionDef>;
+  /** Order of section ids for display. */
+  sectionOrder?: string[];
+  /** Section ids hidden from menu (soft delete). Restorable until purged. */
+  hiddenSectionIds?: string[];
+  /** When each section was hidden (ISO date). Used by runner to purge after 3 months. */
+  deletedSections?: Record<string, { dateDeleted: string }>;
+  /** Lesson topic keys to hide from «Об уроках» (fixed or custom). */
+  hiddenLessonKeys?: string[];
+  /** FAQ question keys to hide from «Задать вопрос». */
+  hiddenFaqKeys?: string[];
+  /** Legacy keys: only present in old Blob data; migration (or scripts/migrate-blob-to-unified-sections.ts) converts to sections/sectionOrder/hiddenSectionIds/deletedSections. */
   mainSectionLabels?: Record<string, string>;
-  /**
-   * Custom main menu sections. Order in customMainSectionOrder.
-   * Flat: { label, content }. Nested: { label, subItems, subItemOrder } (no content).
-   */
   customMainSections?: Record<
     string,
     | { label: string; content: string }
     | { label: string; subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] }
   >;
-  /** Order of custom main section keys for display. */
   customMainSectionOrder?: string[];
-  /** Lesson topic keys to hide from «Об уроках» (fixed or custom). */
-  hiddenLessonKeys?: string[];
-  /** FAQ question keys to hide from «Задать вопрос». */
-  hiddenFaqKeys?: string[];
-  /** Main section ids to hide from main menu (e.g. "lessons", "ask", "contact"). */
   hiddenMainSectionIds?: string[];
 };
 

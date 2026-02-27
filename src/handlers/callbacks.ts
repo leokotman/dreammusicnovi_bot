@@ -3,11 +3,10 @@ import { Markup } from "telegraf";
 import {
   getLesson,
   getFaq,
-  getMainSectionLabel,
-  getCustomMainSectionContent,
-  getCustomMainSections,
-  getCustomMainSectionSubItem,
-  isCustomSectionNested,
+  getSectionLabel,
+  getSectionContent,
+  getSectionSubItem,
+  isSectionNested,
 } from "../content/loader";
 import { stripHtml, escapeForTelegramHtml } from "../utils/html";
 import {
@@ -79,7 +78,7 @@ export function registerCallbacks(bot: {
       await ctx.answerCbQuery();
       const raw = getLesson(key);
       const content = escapeForTelegramHtml(stripHtml(raw));
-      const breadcrumb = `🎶 ${getMainSectionLabel("lessons")} → ${getLessonLabel(key)}`;
+      const breadcrumb = `🎶 ${getSectionLabel("lessons")} → ${getLessonLabel(key)}`;
       await ctx.editMessageText(`${breadcrumb}\n\n${content}`, {
         parse_mode: "HTML",
         ...getLessonsMenuForTopic(),
@@ -121,7 +120,7 @@ export function registerCallbacks(bot: {
       await ctx.answerCbQuery();
       const raw = getFaq(key);
       const content = escapeForTelegramHtml(stripHtml(raw));
-      const breadcrumb = `❓ ${getMainSectionLabel("ask")} → ${getFaqLabel(key)}`;
+      const breadcrumb = `❓ ${getSectionLabel("ask")} → ${getFaqLabel(key)}`;
       await ctx.editMessageText(`${breadcrumb}\n\n${content}`, {
         parse_mode: "HTML",
         ...getAskMenuForTopic(),
@@ -159,7 +158,7 @@ export function registerCallbacks(bot: {
       await ctx.answerCbQuery();
       const telegramUrl = `https://t.me/${contact.telegramUsername}`;
       const emailText = `📧 <b>Email</b>\n${contact.email}`;
-      const contactTitle = getMainSectionLabel("contact");
+      const contactTitle = getSectionLabel("contact");
       await ctx.editMessageText(
         `👋 <b>${contactTitle}</b>\n\n` +
           `• <a href="${telegramUrl}">Telegram</a>\n` +
@@ -179,7 +178,7 @@ export function registerCallbacks(bot: {
       const data = cq && "data" in cq ? cq.data : undefined;
       if (!data) return;
       const key = data.slice(MAIN_CUSTOM_PREFIX.length);
-      if (isCustomSectionNested(key)) {
+      if (isSectionNested(key)) {
         await ctx.answerCbQuery();
         await ctx.editMessageText(getCustomSectionSubMenuMessage(key), {
           parse_mode: "HTML",
@@ -187,7 +186,7 @@ export function registerCallbacks(bot: {
         });
         return;
       }
-      const content = getCustomMainSectionContent(key);
+      const content = getSectionContent(key);
       if (!content) {
         await ctx.answerCbQuery();
         return;
@@ -211,15 +210,14 @@ export function registerCallbacks(bot: {
       if (colon === -1) return;
       const sectionKey = rest.slice(0, colon);
       const itemKey = rest.slice(colon + 1);
-      const item = getCustomMainSectionSubItem(sectionKey, itemKey);
+      const item = getSectionSubItem(sectionKey, itemKey);
       if (!item) {
         await ctx.answerCbQuery();
         return;
       }
       await ctx.answerCbQuery();
       const plain = escapeForTelegramHtml(stripHtml(item.content));
-      const customSections = getCustomMainSections();
-      const sectionLabel = customSections.find((s) => s.key === sectionKey)?.label ?? sectionKey;
+      const sectionLabel = getSectionLabel(sectionKey);
       const breadcrumb = `${escapeForTelegramHtml(sectionLabel)} → ${escapeForTelegramHtml(item.label)}`;
       await ctx.editMessageText(`${breadcrumb}\n\n${plain}`, {
         parse_mode: "HTML",

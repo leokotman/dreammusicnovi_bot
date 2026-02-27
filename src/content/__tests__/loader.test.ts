@@ -3,34 +3,33 @@ import * as path from "path";
 import {
   LESSON_KEYS,
   FAQ_KEYS,
-  MAIN_SECTION_IDS,
+  DEFAULT_SECTION_IDS,
   getLesson,
   getFaq,
   getLessonLabel,
   getFaqLabel,
-  getMainSectionLabel,
-  getMainMenuSectionIds,
-  getCustomMainSections,
-  getCustomMainSectionContent,
-  isCustomSectionNested,
-  getCustomMainSectionSubIds,
-  getCustomMainSectionSubItem,
+  getSectionLabel,
+  getVisibleSectionIds,
+  getSections,
+  getSectionContent,
+  isSectionNested,
+  getSectionSubIds,
+  getSectionSubItem,
   setSavedLessonContent,
   setSavedFaqContent,
   setSavedLessonLabel,
   setSavedFaqLabel,
-  setSavedMainSectionLabel,
+  setSectionLabel,
   getSavedContent,
   initContent,
   replaceSavedContent,
   addCustomLesson,
   addCustomFaq,
-  addCustomMainSection,
-  createCustomMainSectionNested,
-  addCustomMainSectionSubItem,
-  removeCustomMainSection,
-  removeCustomMainSectionSubItem,
-  setSavedCustomMainSectionLabel,
+  addSection,
+  addSectionNested,
+  addSectionSubItem,
+  hideSection,
+  removeSectionSubItem,
   getAllLessonKeys,
   getAllFaqKeys,
   addHiddenLessonKey,
@@ -39,13 +38,14 @@ import {
   addHiddenFaqKey,
   removeCustomFaq,
   removeHiddenFaqKey,
-  addHiddenMainSectionId,
-  removeHiddenMainSectionId,
-  getHiddenMainSectionIds,
+  addHiddenSectionId,
+  removeHiddenSectionId,
+  getHiddenSectionIds,
   getHiddenLessonKeys,
   getHiddenFaqKeys,
   isLessonKeyFixed,
   isFaqKeyFixed,
+  purgeDeletedSectionsOlderThanThreeMonths,
 } from "../loader";
 
 jest.mock("fs");
@@ -110,7 +110,8 @@ describe("loader", () => {
     it("returns copy of saved content", () => {
       initContent();
       const o = getSavedContent();
-      expect(o).toEqual({});
+      expect(o.sections).toBeDefined();
+      expect(o.sectionOrder).toEqual(["lessons", "ask", "contact"]);
       expect(getSavedContent()).not.toBe(o);
     });
   });
@@ -184,31 +185,31 @@ describe("loader", () => {
     });
   });
 
-  describe("main section labels and custom sections", () => {
-    it("getMainSectionLabel returns default for lessons, ask, contact", () => {
+  describe("section labels and sections (single tier)", () => {
+    it("getSectionLabel returns default for lessons, ask, contact", () => {
       initContent();
-      expect(getMainSectionLabel("lessons")).toBe("Об уроках");
-      expect(getMainSectionLabel("ask")).toBe("Задать вопрос");
-      expect(getMainSectionLabel("contact")).toBe("Связаться с преподавателем");
+      expect(getSectionLabel("lessons")).toBe("Об уроках");
+      expect(getSectionLabel("ask")).toBe("Задать вопрос");
+      expect(getSectionLabel("contact")).toBe("Связаться с преподавателем");
     });
 
-    it("getMainSectionLabel returns saved label after setSavedMainSectionLabel", async () => {
+    it("getSectionLabel returns saved label after setSectionLabel", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
-      await setSavedMainSectionLabel("lessons", "О занятиях");
-      expect(getMainSectionLabel("lessons")).toBe("О занятиях");
-      expect(getMainSectionLabel("ask")).toBe("Задать вопрос");
+      await setSectionLabel("lessons", "О занятиях");
+      expect(getSectionLabel("lessons")).toBe("О занятиях");
+      expect(getSectionLabel("ask")).toBe("Задать вопрос");
     });
 
-    it("getMainMenuSectionIds returns fixed ids then custom order", async () => {
+    it("getVisibleSectionIds returns default ids then added sections", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
-      expect(getMainMenuSectionIds()).toEqual([...MAIN_SECTION_IDS]);
-      await addCustomMainSection("Расписание", "Пн–Пт 10:00–18:00");
-      const ids = getMainMenuSectionIds();
-      expect(ids.slice(0, 3)).toEqual([...MAIN_SECTION_IDS]);
+      expect(getVisibleSectionIds().slice(0, 3)).toEqual([...DEFAULT_SECTION_IDS]);
+      await addSection("Расписание", "Пн–Пт 10:00–18:00");
+      const ids = getVisibleSectionIds();
+      expect(ids.slice(0, 3)).toEqual([...DEFAULT_SECTION_IDS]);
       expect(ids.length).toBe(4);
-      expect(ids[3]).toMatch(/^main_/);
+      expect(ids[3]).toMatch(/^sec_/);
     });
 
     it("getAllLessonKeys excludes hiddenLessonKeys", async () => {
@@ -219,22 +220,33 @@ describe("loader", () => {
       expect(getAllLessonKeys()).not.toContain("vocal");
     });
 
-    it("getMainMenuSectionIds excludes hiddenMainSectionIds", async () => {
+    it("getVisibleSectionIds excludes hiddenSectionIds", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
-      expect(getMainMenuSectionIds()).toContain("lessons");
-      await addHiddenMainSectionId("lessons");
-      expect(getMainMenuSectionIds()).not.toContain("lessons");
+      expect(getVisibleSectionIds()).toContain("lessons");
+      await addHiddenSectionId("lessons");
+      expect(getVisibleSectionIds()).not.toContain("lessons");
     });
 
-    it("getHiddenMainSectionIds and removeHiddenMainSectionId restore main section", async () => {
+    it("getHiddenSectionIds and removeHiddenSectionId restore section", async () => {
       initContent();
-      mockFs.readFileSync.mockReturnValue("{}");
-      await addHiddenMainSectionId("contact");
-      expect(getHiddenMainSectionIds()).toContain("contact");
-      await removeHiddenMainSectionId("contact");
-      expect(getHiddenMainSectionIds()).not.toContain("contact");
-      expect(getMainMenuSectionIds()).toContain("contact");
+      let overridesJson = "{}";
+      mockFs.readFileSync.mockImplementation((p: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) return overridesJson;
+        if (pathStr.includes("lessons")) return "<p>lesson content</p>";
+        if (pathStr.includes("faq")) return "<p>faq content</p>";
+        throw new Error("file not found");
+      });
+      mockFs.writeFileSync.mockImplementation(((p: unknown, data: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) overridesJson = typeof data === "string" ? data : String(data);
+      }) as typeof fs.writeFileSync);
+      await addHiddenSectionId("contact");
+      expect(getHiddenSectionIds()).toContain("contact");
+      await removeHiddenSectionId("contact");
+      expect(getHiddenSectionIds()).not.toContain("contact");
+      expect(getVisibleSectionIds()).toContain("contact");
     });
 
     it("getHiddenLessonKeys and removeHiddenLessonKey restore lesson topic", async () => {
@@ -277,7 +289,7 @@ describe("loader", () => {
       expect(getAllLessonKeys()).not.toContain(key);
     });
 
-    it("removeCustomMainSectionSubItem removes sub-item", async () => {
+    it("removeSectionSubItem removes sub-item", async () => {
       initContent();
       let overridesJson = "{}";
       mockFs.readFileSync.mockImplementation((p: unknown) => {
@@ -291,40 +303,41 @@ describe("loader", () => {
         const pathStr = String(p);
         if (pathStr.includes("overrides")) overridesJson = typeof data === "string" ? data : String(data);
       }) as typeof fs.writeFileSync);
-      const sectionKey = await createCustomMainSectionNested("Раздел");
-      await addCustomMainSectionSubItem(sectionKey, "Пункт 1", "Текст 1");
-      const item2 = await addCustomMainSectionSubItem(sectionKey, "Пункт 2", "Текст 2");
-      expect(getCustomMainSectionSubIds(sectionKey).length).toBe(2);
-      await removeCustomMainSectionSubItem(sectionKey, item2);
-      expect(getCustomMainSectionSubIds(sectionKey).length).toBe(1);
-      expect(getCustomMainSectionSubItem(sectionKey, item2)).toBeNull();
+      const sectionKey = await addSectionNested("Раздел");
+      await addSectionSubItem(sectionKey, "Пункт 1", "Текст 1");
+      const item2 = await addSectionSubItem(sectionKey, "Пункт 2", "Текст 2");
+      expect(getSectionSubIds(sectionKey).length).toBe(2);
+      await removeSectionSubItem(sectionKey, item2);
+      expect(getSectionSubIds(sectionKey).length).toBe(1);
+      expect(getSectionSubItem(sectionKey, item2)).toBeNull();
     });
 
-    it("addCustomMainSection adds section and getCustomMainSectionContent returns content", async () => {
+    it("addSection adds section and getSectionContent returns content", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
-      const key = await addCustomMainSection("Расписание", "Пн–Пт 10:00–18:00");
-      expect(key).toMatch(/^main_/);
-      const sections = getCustomMainSections();
-      expect(sections).toHaveLength(1);
-      expect(sections[0].label).toBe("Расписание");
-      expect(sections[0].content).toBe("Пн–Пт 10:00–18:00");
-      expect(getCustomMainSectionContent(key)).toBe("Пн–Пт 10:00–18:00");
+      const key = await addSection("Расписание", "Пн–Пт 10:00–18:00");
+      expect(key).toMatch(/^sec_/);
+      const sections = getSections();
+      const added = sections.filter((s) => s.key === key);
+      expect(added).toHaveLength(1);
+      expect(added[0].label).toBe("Расписание");
+      expect(added[0].content).toBe("Пн–Пт 10:00–18:00");
+      expect(getSectionContent(key)).toBe("Пн–Пт 10:00–18:00");
     });
 
-    it("createCustomMainSectionNested creates section with empty subItems", async () => {
+    it("addSectionNested creates section with empty subItems", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
-      const key = await createCustomMainSectionNested("Расписание");
-      expect(key).toMatch(/^main_/);
-      expect(isCustomSectionNested(key)).toBe(true);
-      expect(getCustomMainSectionSubIds(key)).toEqual([]);
-      expect(getCustomMainSectionContent(key)).toBeNull();
-      const sections = getCustomMainSections();
+      const key = await addSectionNested("Расписание");
+      expect(key).toMatch(/^sec_/);
+      expect(isSectionNested(key)).toBe(true);
+      expect(getSectionSubIds(key)).toEqual([]);
+      expect(getSectionContent(key)).toBeNull();
+      const sections = getSections();
       expect(sections.find((s) => s.key === key)?.label).toBe("Расписание");
     });
 
-    it("addCustomMainSectionSubItem adds sub-item and getCustomMainSectionSubItem returns it", async () => {
+    it("addSectionSubItem adds sub-item and getSectionSubItem returns it", async () => {
       initContent();
       let overridesJson = "{}";
       mockFs.readFileSync.mockImplementation((p: unknown) => {
@@ -338,16 +351,16 @@ describe("loader", () => {
         const pathStr = String(p);
         if (pathStr.includes("overrides")) overridesJson = typeof data === "string" ? data : String(data);
       }) as typeof fs.writeFileSync);
-      const sectionKey = await createCustomMainSectionNested("Расписание");
-      const itemKey = await addCustomMainSectionSubItem(sectionKey, "Понедельник", "Занятия с 10:00.");
-      expect(getCustomMainSectionSubIds(sectionKey)).toEqual([itemKey]);
-      const item = getCustomMainSectionSubItem(sectionKey, itemKey);
+      const sectionKey = await addSectionNested("Расписание");
+      const itemKey = await addSectionSubItem(sectionKey, "Понедельник", "Занятия с 10:00.");
+      expect(getSectionSubIds(sectionKey)).toEqual([itemKey]);
+      const item = getSectionSubItem(sectionKey, itemKey);
       expect(item).toEqual({ label: "Понедельник", content: "Занятия с 10:00." });
-      await addCustomMainSectionSubItem(sectionKey, "Вторник", "Занятия с 14:00.");
-      expect(getCustomMainSectionSubIds(sectionKey).length).toBe(2);
+      await addSectionSubItem(sectionKey, "Вторник", "Занятия с 14:00.");
+      expect(getSectionSubIds(sectionKey).length).toBe(2);
     });
 
-    it("removeCustomMainSection removes section and order entry", async () => {
+    it("hideSection hides section from visible list and sets deletedSections", async () => {
       initContent();
       let overridesJson = "{}";
       mockFs.readFileSync.mockImplementation((p: unknown) => {
@@ -361,14 +374,16 @@ describe("loader", () => {
         const pathStr = String(p);
         if (pathStr.includes("overrides")) overridesJson = typeof data === "string" ? data : String(data);
       }) as typeof fs.writeFileSync);
-      const key = await addCustomMainSection("Удаляемый", "Текст");
-      expect(getCustomMainSections()).toHaveLength(1);
-      await removeCustomMainSection(key);
-      expect(getCustomMainSections()).toHaveLength(0);
-      expect(getMainMenuSectionIds().includes(key)).toBe(false);
+      const key = await addSection("Удаляемый", "Текст");
+      expect(getVisibleSectionIds()).toContain(key);
+      await hideSection(key);
+      expect(getVisibleSectionIds()).not.toContain(key);
+      expect(getHiddenSectionIds()).toContain(key);
+      const content = getSavedContent();
+      expect(content.deletedSections?.[key]?.dateDeleted).toBeDefined();
     });
 
-    it("setSavedCustomMainSectionLabel updates custom section label", async () => {
+    it("setSectionLabel updates section label", async () => {
       initContent();
       let overridesJson = "{}";
       mockFs.readFileSync.mockImplementation((p: unknown) => {
@@ -382,21 +397,45 @@ describe("loader", () => {
         const pathStr = String(p);
         if (pathStr.includes("overrides")) overridesJson = typeof data === "string" ? data : String(data);
       }) as typeof fs.writeFileSync);
-      const key = await addCustomMainSection("Расписание", "Пн–Пт");
-      expect(getCustomMainSections()[0].label).toBe("Расписание");
-      await setSavedCustomMainSectionLabel(key, "Новое расписание");
-      expect(getCustomMainSections()[0].label).toBe("Новое расписание");
+      const key = await addSection("Расписание", "Пн–Пт");
+      expect(getSections().find((s) => s.key === key)?.label).toBe("Расписание");
+      await setSectionLabel(key, "Новое расписание");
+      expect(getSections().find((s) => s.key === key)?.label).toBe("Новое расписание");
     });
 
-    it("setSavedMainSectionLabel preserves lessons and faq", async () => {
-      const existing = { lessons: { price: "x" }, faq: { amITooOld: "y" } };
+    it("setSectionLabel preserves lessons and faq", async () => {
+      const existing = { lessons: { price: "x" }, faq: { amITooOld: "y" }, sections: { contact: { label: "Контакты", type: "contact" } }, sectionOrder: ["lessons", "ask", "contact"] };
       mockFs.readFileSync.mockReturnValue(JSON.stringify(existing));
       initContent();
-      await setSavedMainSectionLabel("contact", "Контакты");
+      await setSectionLabel("contact", "Контакты");
       const content = getSavedContent();
-      expect(content.mainSectionLabels?.contact).toBe("Контакты");
+      expect(content.sections?.contact?.label).toBe("Контакты");
       expect(content.lessons?.price).toBe("x");
       expect(content.faq?.amITooOld).toBe("y");
+    });
+
+    it("purgeDeletedSectionsOlderThanThreeMonths removes sections deleted over 3 months ago", async () => {
+      const overThreeMonthsAgo = new Date();
+      overThreeMonthsAgo.setMonth(overThreeMonthsAgo.getMonth() - 4);
+      const existing = {
+        sections: { foo: { label: "Foo", type: "flat", content: "x" }, bar: { label: "Bar", type: "flat", content: "y" } },
+        sectionOrder: ["lessons", "ask", "contact", "foo", "bar"],
+        hiddenSectionIds: ["foo", "bar"],
+        deletedSections: {
+          foo: { dateDeleted: overThreeMonthsAgo.toISOString() },
+          bar: { dateDeleted: new Date().toISOString() },
+        },
+      };
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(existing));
+      initContent();
+      const { purged } = await purgeDeletedSectionsOlderThanThreeMonths();
+      expect(purged).toContain("foo");
+      expect(purged).not.toContain("bar");
+      const content = getSavedContent();
+      expect(content.sections?.foo).toBeUndefined();
+      expect(content.sections?.bar).toBeDefined();
+      expect(content.hiddenSectionIds).not.toContain("foo");
+      expect(content.deletedSections?.foo).toBeUndefined();
     });
   });
 
