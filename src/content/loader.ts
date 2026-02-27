@@ -83,18 +83,56 @@ export function getMainMenuSectionIds(): string[] {
   return [...MAIN_SECTION_IDS, ...customOrder];
 }
 
+type CustomMainSection =
+  | { label: string; content: string }
+  | { label: string; subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] };
+
+function getCustomSection(sectionKey: string): CustomMainSection | undefined {
+  const sections = savedContent.customMainSections ?? {};
+  return sections[sectionKey] as CustomMainSection | undefined;
+}
+
+function isNestedSection(section: CustomMainSection): section is { label: string; subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] } {
+  return "subItems" in section && section.subItems != null;
+}
+
 export function getCustomMainSections(): { key: string; label: string; content: string }[] {
   const order = savedContent.customMainSectionOrder ?? [];
   const sections = savedContent.customMainSections ?? {};
   return order
     .filter((key) => sections[key])
-    .map((key) => ({ key, label: sections[key].label, content: sections[key].content }));
+    .map((key) => {
+      const s = sections[key] as CustomMainSection;
+      const content = "content" in s ? s.content : "";
+      return { key, label: s.label, content };
+    });
 }
 
 export function getCustomMainSectionContent(key: string): string | null {
-  const sections = savedContent.customMainSections ?? {};
-  const item = sections[key];
-  return item ? item.content : null;
+  const section = getCustomSection(key);
+  if (!section) return null;
+  if (isNestedSection(section)) return null;
+  return section.content ?? null;
+}
+
+/** True if custom section has sub-items (nested). */
+export function isCustomSectionNested(sectionKey: string): boolean {
+  const section = getCustomSection(sectionKey);
+  return section != null && isNestedSection(section);
+}
+
+/** Ordered sub-item keys for a nested custom section. */
+export function getCustomMainSectionSubIds(sectionKey: string): string[] {
+  const section = getCustomSection(sectionKey);
+  if (!section || !isNestedSection(section)) return [];
+  return section.subItemOrder ?? Object.keys(section.subItems);
+}
+
+export function getCustomMainSectionSubItem(sectionKey: string, itemKey: string): { label: string; content: string } | null {
+  const section = getCustomSection(sectionKey);
+  if (!section || !isNestedSection(section)) return null;
+  const item = section.subItems[itemKey];
+  return item ?? null;
 }
 
 /** Load saved content from storage (Blob or fs) into memory. Call at start of each webhook request so edits persist. */
@@ -167,7 +205,7 @@ export async function setSavedMainSectionLabel(id: string, label: string): Promi
   await saveSavedContent(savedContent);
 }
 
-/** Add a new custom main menu section (label + content). Returns the new key. */
+/** Add a new custom main menu section (flat: label + content). Returns the new key. */
 export async function addCustomMainSection(label: string, content: string): Promise<string> {
   const key = slugFromLabelForMain(label);
   const data = await loadSavedContent();
@@ -177,6 +215,50 @@ export async function addCustomMainSection(label: string, content: string): Prom
   if (!order.includes(key)) order.push(key);
   savedContent = { ...current, customMainSections: sections, customMainSectionOrder: order };
   await saveSavedContent(savedContent);
+  return key;
+}
+
+/** Create a nested custom main section (no content yet). Returns the new section key. */
+export async function createCustomMainSectionNested(label: string): Promise<string> {
+  const key = slugFromLabelForMain(label);
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const sections = {
+    ...(current.customMainSections ?? {}),
+    [key]: { label: label.trim(), subItems: {} as Record<string, { label: string; content: string }>, subItemOrder: [] as string[] },
+  };
+  const order = [...(current.customMainSectionOrder ?? [])];
+  if (!order.includes(key)) order.push(key);
+  savedContent = { ...current, customMainSections: sections, customMainSectionOrder: order };
+  await saveSavedContent(savedContent);
+  return key;
+}
+
+/** Add a sub-item to a nested custom main section. Returns the new item key. */
+export async function addCustomMainSectionSubItem(sectionKey: string, itemLabel: string, content: string): Promise<string> {
+  const section = getCustomSection(sectionKey);
+  if (!section || !isNestedSection(section)) throw new Error("Section is not nested");
+  const existingKeys = section.subItemOrder ?? Object.keys(section.subItems);
+  const itemKey = slugForSubItem(itemLabel, existingKeys);
+  const data = await loadSavedContent();
+  const current = data ?? {};
+  const sections = current.customMainSections ?? {};
+  const existing = sections[sectionKey] as { label: string; subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] } | undefined;
+  if (!existing || !("subItems" in existing)) throw new Error("Section not found or not nested");
+  const subItems = { ...existing.subItems, [itemKey]: { label: itemLabel.trim(), content: content.trim() } };
+  const subItemOrder = [...(existing.subItemOrder ?? []), itemKey];
+  const newSections = { ...sections, [sectionKey]: { ...existing, subItems, subItemOrder } };
+  savedContent = { ...current, customMainSections: newSections };
+  await saveSavedContent(savedContent);
+  return itemKey;
+}
+
+function slugForSubItem(label: string, existingKeys: string[]): string {
+  const base = transliterateCyrillicToLatin(label.trim()).replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+  const prefix = base || "item";
+  let key = prefix;
+  let n = 0;
+  while (existingKeys.includes(key)) key = `${prefix}_${++n}`;
   return key;
 }
 

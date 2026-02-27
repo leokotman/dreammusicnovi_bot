@@ -12,6 +12,9 @@ import {
   getMainMenuSectionIds,
   getCustomMainSections,
   getCustomMainSectionContent,
+  isCustomSectionNested,
+  getCustomMainSectionSubIds,
+  getCustomMainSectionSubItem,
   setSavedLessonContent,
   setSavedFaqContent,
   setSavedLessonLabel,
@@ -23,6 +26,8 @@ import {
   addCustomLesson,
   addCustomFaq,
   addCustomMainSection,
+  createCustomMainSectionNested,
+  addCustomMainSectionSubItem,
 } from "../loader";
 
 jest.mock("fs");
@@ -198,6 +203,41 @@ describe("loader", () => {
       expect(sections[0].label).toBe("Расписание");
       expect(sections[0].content).toBe("Пн–Пт 10:00–18:00");
       expect(getCustomMainSectionContent(key)).toBe("Пн–Пт 10:00–18:00");
+    });
+
+    it("createCustomMainSectionNested creates section with empty subItems", async () => {
+      initContent();
+      mockFs.readFileSync.mockReturnValue("{}");
+      const key = await createCustomMainSectionNested("Расписание");
+      expect(key).toMatch(/^main_/);
+      expect(isCustomSectionNested(key)).toBe(true);
+      expect(getCustomMainSectionSubIds(key)).toEqual([]);
+      expect(getCustomMainSectionContent(key)).toBeNull();
+      const sections = getCustomMainSections();
+      expect(sections.find((s) => s.key === key)?.label).toBe("Расписание");
+    });
+
+    it("addCustomMainSectionSubItem adds sub-item and getCustomMainSectionSubItem returns it", async () => {
+      initContent();
+      let overridesJson = "{}";
+      mockFs.readFileSync.mockImplementation((p: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) return overridesJson;
+        if (pathStr.includes("lessons")) return "<p>lesson content</p>";
+        if (pathStr.includes("faq")) return "<p>faq content</p>";
+        throw new Error("file not found");
+      });
+      mockFs.writeFileSync.mockImplementation(((p: unknown, data: unknown) => {
+        const pathStr = String(p);
+        if (pathStr.includes("overrides")) overridesJson = typeof data === "string" ? data : String(data);
+      }) as typeof fs.writeFileSync);
+      const sectionKey = await createCustomMainSectionNested("Расписание");
+      const itemKey = await addCustomMainSectionSubItem(sectionKey, "Понедельник", "Занятия с 10:00.");
+      expect(getCustomMainSectionSubIds(sectionKey)).toEqual([itemKey]);
+      const item = getCustomMainSectionSubItem(sectionKey, itemKey);
+      expect(item).toEqual({ label: "Понедельник", content: "Занятия с 10:00." });
+      await addCustomMainSectionSubItem(sectionKey, "Вторник", "Занятия с 14:00.");
+      expect(getCustomMainSectionSubIds(sectionKey).length).toBe(2);
     });
 
     it("setSavedMainSectionLabel preserves lessons and faq", async () => {

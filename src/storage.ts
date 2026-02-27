@@ -31,8 +31,15 @@ export type SavedContentData = {
   faqLabelOverrides?: Record<string, string>;
   /** Saved labels for main menu sections: lessons, ask, contact. */
   mainSectionLabels?: Record<string, string>;
-  /** Custom main menu sections (key -> { label, content }). Order in customMainSectionOrder. */
-  customMainSections?: Record<string, { label: string; content: string }>;
+  /**
+   * Custom main menu sections. Order in customMainSectionOrder.
+   * Flat: { label, content }. Nested: { label, subItems, subItemOrder } (no content).
+   */
+  customMainSections?: Record<
+    string,
+    | { label: string; content: string }
+    | { label: string; subItems: Record<string, { label: string; content: string }>; subItemOrder: string[] }
+  >;
   /** Order of custom main section keys for display. */
   customMainSectionOrder?: string[];
 };

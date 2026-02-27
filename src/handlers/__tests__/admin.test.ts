@@ -13,6 +13,10 @@ jest.mock("../../content/loader", () => ({
   addCustomLesson: jest.fn().mockResolvedValue("new_lesson_key"),
   addCustomFaq: jest.fn().mockResolvedValue("new_faq_key"),
   addCustomMainSection: jest.fn().mockResolvedValue("main_custom_1"),
+  createCustomMainSectionNested: jest.fn().mockResolvedValue("main_raspisaniye"),
+  addCustomMainSectionSubItem: jest.fn().mockResolvedValue("item_1"),
+  getCustomMainSections: jest.fn().mockReturnValue([]),
+  getCustomMainSectionSubIds: jest.fn().mockReturnValue([]),
   getAllLessonKeys: jest.fn().mockReturnValue([]),
   getAllFaqKeys: jest.fn().mockReturnValue([]),
   getLesson: jest.fn(),
@@ -42,8 +46,10 @@ const setSavedLessonLabel = loader.setSavedLessonLabel as jest.Mock;
 const setSavedFaqLabel = loader.setSavedFaqLabel as jest.Mock;
 const setSavedMainSectionLabel = loader.setSavedMainSectionLabel as jest.Mock;
 const addCustomMainSection = loader.addCustomMainSection as jest.Mock;
+const addCustomMainSectionSubItem = loader.addCustomMainSectionSubItem as jest.Mock;
 const getState = userState.getState as jest.Mock;
 const clearState = userState.clearState as jest.Mock;
+const setState = userState.setState as jest.Mock;
 
 describe("handleAdminEdit", () => {
   const userId = 12345;
@@ -105,12 +111,17 @@ describe("handleAdminEdit", () => {
     expect(reply).toHaveBeenCalledWith("Название пункта главного меню обновлено.");
   });
 
-  it("handles awaiting_new_main_section_label: sets state and asks for content", async () => {
+  it("handles awaiting_new_main_section_label: sets state and asks for flat vs nested choice", async () => {
     getState.mockReturnValue({ type: "awaiting_new_main_section_label" });
     const result = await handleAdminEdit(userId, "Расписание", reply);
     expect(result).toBe(true);
+    expect(setState).toHaveBeenCalledWith(userId, {
+      type: "awaiting_new_main_section_choice",
+      label: "Расписание",
+    });
     expect(reply).toHaveBeenCalledWith(
-      expect.stringContaining("Название раздела")
+      expect.stringContaining("Один блок текста или раздел с подпунктами"),
+      expect.any(Object)
     );
   });
 
@@ -121,5 +132,45 @@ describe("handleAdminEdit", () => {
     expect(addCustomMainSection).toHaveBeenCalledWith("Расписание", "Пн–Пт 10:00–18:00");
     expect(clearState).toHaveBeenCalledWith(userId);
     expect(reply).toHaveBeenCalledWith(expect.stringContaining("добавлен в главное меню"));
+  });
+
+  it("handles awaiting_new_main_section_sub_label: sets state and asks for sub-item content", async () => {
+    getState.mockReturnValue({ type: "awaiting_new_main_section_sub_label", sectionKey: "main_raspisaniye" });
+    const result = await handleAdminEdit(userId, "Расписание на неделю", reply);
+    expect(result).toBe(true);
+    expect(setState).toHaveBeenCalledWith(userId, {
+      type: "awaiting_new_main_section_sub_content",
+      sectionKey: "main_raspisaniye",
+      itemLabel: "Расписание на неделю",
+    });
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("текст подпункта"));
+  });
+
+  it("handles awaiting_new_main_section_sub_content: calls addCustomMainSectionSubItem and asks for more or done", async () => {
+    getState.mockReturnValue({
+      type: "awaiting_new_main_section_sub_content",
+      sectionKey: "main_raspisaniye",
+      itemLabel: "Понедельник",
+    });
+    const result = await handleAdminEdit(userId, "Занятия с 10:00.", reply);
+    expect(result).toBe(true);
+    expect(addCustomMainSectionSubItem).toHaveBeenCalledWith("main_raspisaniye", "Понедельник", "Занятия с 10:00.");
+    expect(setState).toHaveBeenCalledWith(userId, { type: "awaiting_new_main_section_sub_more", sectionKey: "main_raspisaniye" });
+    expect(reply).toHaveBeenCalledWith(
+      expect.stringContaining("Подпункт добавлен"),
+      expect.any(Object)
+    );
+  });
+
+  it("handles awaiting_new_main_section_sub_more: treats text as next sub-item label", async () => {
+    getState.mockReturnValue({ type: "awaiting_new_main_section_sub_more", sectionKey: "main_raspisaniye" });
+    const result = await handleAdminEdit(userId, "Вторник", reply);
+    expect(result).toBe(true);
+    expect(setState).toHaveBeenCalledWith(userId, {
+      type: "awaiting_new_main_section_sub_content",
+      sectionKey: "main_raspisaniye",
+      itemLabel: "Вторник",
+    });
+    expect(reply).toHaveBeenCalledWith(expect.stringContaining("текст подпункта"));
   });
 });

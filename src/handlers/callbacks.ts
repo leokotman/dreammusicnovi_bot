@@ -5,6 +5,9 @@ import {
   getFaq,
   getMainSectionLabel,
   getCustomMainSectionContent,
+  getCustomMainSections,
+  getCustomMainSectionSubItem,
+  isCustomSectionNested,
 } from "../content/loader";
 import { stripHtml, escapeForTelegramHtml } from "../utils/html";
 import {
@@ -15,6 +18,9 @@ import {
   ASK,
   CONTACT,
   MAIN_CUSTOM_PREFIX,
+  MAIN_CUSTOM_SUB_PREFIX,
+  getCustomSectionSubMenu,
+  getCustomSectionSubMenuMessage,
 } from "../menus/main.menu";
 import {
   getLessonsMenu,
@@ -167,12 +173,20 @@ export function registerCallbacks(bot: {
     });
   });
 
-  bot.action(new RegExp(`^${MAIN_CUSTOM_PREFIX}`), async (ctx) => {
+  bot.action(new RegExp(`^${MAIN_CUSTOM_PREFIX}[^:]+$`), async (ctx) => {
     await withErrorHandling(ctx, async () => {
       const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
       const data = cq && "data" in cq ? cq.data : undefined;
       if (!data) return;
       const key = data.slice(MAIN_CUSTOM_PREFIX.length);
+      if (isCustomSectionNested(key)) {
+        await ctx.answerCbQuery();
+        await ctx.editMessageText(getCustomSectionSubMenuMessage(key), {
+          parse_mode: "HTML",
+          ...getCustomSectionSubMenu(key),
+        });
+        return;
+      }
       const content = getCustomMainSectionContent(key);
       if (!content) {
         await ctx.answerCbQuery();
@@ -183,6 +197,35 @@ export function registerCallbacks(bot: {
       await ctx.editMessageText(plain, {
         parse_mode: "HTML",
         ...Markup.inlineKeyboard([[Markup.button.callback("◀️ Назад", MAIN)]]),
+      });
+    });
+  });
+
+  bot.action(new RegExp(`^${MAIN_CUSTOM_SUB_PREFIX}`), async (ctx) => {
+    await withErrorHandling(ctx, async () => {
+      const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+      const data = cq && "data" in cq ? cq.data : undefined;
+      if (!data) return;
+      const rest = data.slice(MAIN_CUSTOM_SUB_PREFIX.length);
+      const colon = rest.indexOf(":");
+      if (colon === -1) return;
+      const sectionKey = rest.slice(0, colon);
+      const itemKey = rest.slice(colon + 1);
+      const item = getCustomMainSectionSubItem(sectionKey, itemKey);
+      if (!item) {
+        await ctx.answerCbQuery();
+        return;
+      }
+      await ctx.answerCbQuery();
+      const plain = escapeForTelegramHtml(stripHtml(item.content));
+      const customSections = getCustomMainSections();
+      const sectionLabel = customSections.find((s) => s.key === sectionKey)?.label ?? sectionKey;
+      const breadcrumb = `${escapeForTelegramHtml(sectionLabel)} → ${escapeForTelegramHtml(item.label)}`;
+      await ctx.editMessageText(`${breadcrumb}\n\n${plain}`, {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("◀️ Назад", `${MAIN_CUSTOM_PREFIX}${sectionKey}`)],
+        ]),
       });
     });
   });

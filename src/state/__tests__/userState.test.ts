@@ -46,6 +46,34 @@ describe("userState", () => {
     expect(getState(userId)).toEqual({ type: "awaiting_new_main_section_content", label: "Расписание" });
   });
 
+  it("returns set state for awaiting_new_main_section_choice", () => {
+    setState(userId, { type: "awaiting_new_main_section_choice", label: "Расписание" });
+    expect(getState(userId)).toEqual({ type: "awaiting_new_main_section_choice", label: "Расписание" });
+  });
+
+  it("returns set state for awaiting_new_main_section_sub_label", () => {
+    setState(userId, { type: "awaiting_new_main_section_sub_label", sectionKey: "main_raspisaniye" });
+    expect(getState(userId)).toEqual({ type: "awaiting_new_main_section_sub_label", sectionKey: "main_raspisaniye" });
+  });
+
+  it("returns set state for awaiting_new_main_section_sub_content", () => {
+    setState(userId, {
+      type: "awaiting_new_main_section_sub_content",
+      sectionKey: "main_raspisaniye",
+      itemLabel: "Понедельник",
+    });
+    expect(getState(userId)).toEqual({
+      type: "awaiting_new_main_section_sub_content",
+      sectionKey: "main_raspisaniye",
+      itemLabel: "Понедельник",
+    });
+  });
+
+  it("returns set state for awaiting_new_main_section_sub_more", () => {
+    setState(userId, { type: "awaiting_new_main_section_sub_more", sectionKey: "main_raspisaniye" });
+    expect(getState(userId)).toEqual({ type: "awaiting_new_main_section_sub_more", sectionKey: "main_raspisaniye" });
+  });
+
   it("returns set state for awaiting_add_admin", () => {
     setState(userId, { type: "awaiting_add_admin" });
     expect(getState(userId)).toEqual({ type: "awaiting_add_admin" });

@@ -22,8 +22,8 @@ export async function handleText(ctx: Context): Promise<void> {
 
     // 1) Admin editing content or adding admin (no rate limit)
     if (isAdmin(userId.toString())) {
-      const handled = await handleAdminEdit(userId, text, (msg) =>
-        ctx.replyWithHTML(msg)
+      const handled = await handleAdminEdit(userId, text, (msg, opts) =>
+        ctx.replyWithHTML(msg, (opts ?? {}) as Parameters<Context["replyWithHTML"]>[1])
       );
       if (handled) return;
     }

@@ -15,10 +15,14 @@ import {
   getLessonLabel,
   getFaqLabel,
   getMainSectionLabel,
+  getCustomMainSections,
+  getCustomMainSectionSubIds,
   MAIN_SECTION_IDS,
   addCustomLesson,
   addCustomFaq,
   addCustomMainSection,
+  createCustomMainSectionNested,
+  addCustomMainSectionSubItem,
   type LessonKey,
   type FaqKey,
 } from "../content/loader";
@@ -42,6 +46,9 @@ const ADM_FAQ_ANS_PREFIX = "adm_faq_ans:";
 const ADM_MAIN_MENU = "adm_main_menu";
 const ADM_MAIN_SECTION_PREFIX = "adm_main_sec:";
 const ADM_ADD_MAIN_SECTION = "adm_add_main_section";
+const ADM_NEW_SEC_FLAT = "adm_new_sec_flat";
+const ADM_NEW_SEC_NESTED = "adm_new_sec_nested";
+const ADM_NEW_SEC_DONE_PREFIX = "adm_new_sec_done:";
 const MAX_PREVIEW_LEN = 2800; // leave room for instruction (Telegram limit 4096)
 
 
@@ -185,8 +192,65 @@ export function registerAdmin(bot: {
       await ctx.answerCbQuery();
       setState(ctx.from!.id, { type: "awaiting_new_main_section_label" });
       await ctx.editMessageText(
-        "Отправьте в следующем сообщении <b>название нового раздела</b> (как он будет отображаться в главном меню). Затем отправьте текст раздела.",
+        "Отправьте в следующем сообщении <b>название нового раздела</b> (как он будет отображаться в главном меню). Затем выберите: один блок текста или раздел с подпунктами.",
         { parse_mode: "HTML" }
+      );
+    });
+  });
+
+  bot.action(ADM_NEW_SEC_FLAT, async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const state = getState(ctx.from!.id);
+    if (state?.type !== "awaiting_new_main_section_choice") return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      setState(ctx.from!.id, { type: "awaiting_new_main_section_content", label: state.label });
+      await ctx.editMessageText("Отправьте текст раздела (один блок).");
+    });
+  });
+
+  bot.action(ADM_NEW_SEC_NESTED, async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const state = getState(ctx.from!.id);
+    if (state?.type !== "awaiting_new_main_section_choice") return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      const sectionKey = await createCustomMainSectionNested(state.label);
+      setState(ctx.from!.id, { type: "awaiting_new_main_section_sub_label", sectionKey });
+      await ctx.editMessageText(
+        "Отправьте название первого подпункта (или нажмите Готово, чтобы завершить без подпунктов).",
+        Markup.inlineKeyboard([[Markup.button.callback("✅ Готово", `${ADM_NEW_SEC_DONE_PREFIX}${sectionKey}`)]])
+      );
+    });
+  });
+
+  bot.action(new RegExp(`^${ADM_NEW_SEC_DONE_PREFIX}`), async (ctx) => {
+    if (!canUseAdmin(ctx)) {
+      await ctx.answerCbQuery();
+      return;
+    }
+    const cq = "callback_query" in ctx.update ? ctx.update.callback_query : undefined;
+    const data = cq && "data" in cq ? cq.data : undefined;
+    if (!data) return;
+    const sectionKey = data.slice(ADM_NEW_SEC_DONE_PREFIX.length);
+    const state = getState(ctx.from!.id);
+    if (state?.type !== "awaiting_new_main_section_sub_more" && state?.type !== "awaiting_new_main_section_sub_label") return;
+    if (state.sectionKey !== sectionKey) return;
+    await withErrorHandling(ctx, async () => {
+      await ctx.answerCbQuery();
+      clearState(ctx.from!.id);
+      const sections = getCustomMainSections();
+      const section = sections.find((s) => s.key === sectionKey);
+      const label = section?.label ?? sectionKey;
+      const count = getCustomMainSectionSubIds(sectionKey).length;
+      await ctx.editMessageText(
+        `Раздел «${label}» добавлен в главное меню с ${count} подпунктом(ами) (ключ: ${sectionKey}).`
       );
     });
   });
@@ -432,11 +496,11 @@ export function registerAdmin(bot: {
   });
 }
 
-/** Handle admin's next message: edit content or add_admin (called from text handler) */
+/** Handle admin's next message: edit content or add_admin (called from text handler). reply can accept optional reply_markup. */
 export async function handleAdminEdit(
   userId: number,
   text: string,
-  reply: (msg: string) => Promise<unknown>
+  reply: (msg: string, opts?: { reply_markup?: object }) => Promise<unknown>
 ): Promise<boolean> {
   const state = getState(userId);
   if (!state) return false;
@@ -473,14 +537,39 @@ export async function handleAdminEdit(
     return true;
   }
   if (state.type === "awaiting_new_main_section_label") {
-    setState(userId, { type: "awaiting_new_main_section_content", label: text.trim() });
-    await reply(`Название раздела: «${text.trim()}». Теперь отправьте текст раздела.`);
+    setState(userId, { type: "awaiting_new_main_section_choice", label: text.trim() });
+    await reply(
+      `Название раздела: «${text.trim()}». Один блок текста или раздел с подпунктами?`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback("Один текст", ADM_NEW_SEC_FLAT)],
+        [Markup.button.callback("С подпунктами", ADM_NEW_SEC_NESTED)],
+      ])
+    );
     return true;
   }
   if (state.type === "awaiting_new_main_section_content") {
     const key = await addCustomMainSection(state.label, stripHtml(text));
     clearState(userId);
     await reply(`Раздел «${state.label}» добавлен в главное меню (ключ: ${key}).`);
+    return true;
+  }
+  if (state.type === "awaiting_new_main_section_sub_label") {
+    setState(userId, { type: "awaiting_new_main_section_sub_content", sectionKey: state.sectionKey, itemLabel: text.trim() });
+    await reply(`Отправьте текст подпункта «${text.trim()}».`);
+    return true;
+  }
+  if (state.type === "awaiting_new_main_section_sub_content") {
+    await addCustomMainSectionSubItem(state.sectionKey, state.itemLabel, stripHtml(text));
+    setState(userId, { type: "awaiting_new_main_section_sub_more", sectionKey: state.sectionKey });
+    await reply(
+      "Подпункт добавлен. Отправьте название следующего подпункта или нажмите Готово.",
+      Markup.inlineKeyboard([[Markup.button.callback("✅ Готово", `${ADM_NEW_SEC_DONE_PREFIX}${state.sectionKey}`)]])
+    );
+    return true;
+  }
+  if (state.type === "awaiting_new_main_section_sub_more") {
+    setState(userId, { type: "awaiting_new_main_section_sub_content", sectionKey: state.sectionKey, itemLabel: text.trim() });
+    await reply(`Отправьте текст подпункта «${text.trim()}».`);
     return true;
   }
   if (state.type === "awaiting_new_lesson_label") {
