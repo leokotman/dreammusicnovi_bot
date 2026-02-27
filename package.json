@@ -11,9 +11,15 @@
     "test": "npx jest",
     "test:watch": "npx jest --watch"
   },
-  "keywords": ["telegram", "bot", "telegraf", "music"],
+  "keywords": [
+    "telegram",
+    "bot",
+    "telegraf",
+    "music"
+  ],
   "license": "MIT",
   "dependencies": {
+    "@vercel/blob": "^2.3.0",
     "dotenv": "^16.3.1",
     "telegraf": "^4.16.3"
   },

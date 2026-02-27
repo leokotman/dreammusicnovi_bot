@@ -59,17 +59,17 @@ describe("loader", () => {
       expect(getFaq("amITooOld")).toBe("<p>faq content</p>");
     });
 
-    it("setLessonOverride then getLesson returns override", () => {
+    it("setLessonOverride then getLesson returns override", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
-      setLessonOverride("price", "<b>New price</b>");
+      await setLessonOverride("price", "<b>New price</b>");
       expect(getLesson("price")).toBe("<b>New price</b>");
     });
 
-    it("setFaqOverride then getFaq returns override", () => {
+    it("setFaqOverride then getFaq returns override", async () => {
       initContent();
       mockFs.readFileSync.mockReturnValue("{}");
-      setFaqOverride("amITooOld", "<b>New answer</b>");
+      await setFaqOverride("amITooOld", "<b>New answer</b>");
       expect(getFaq("amITooOld")).toBe("<b>New answer</b>");
     });
   });
@@ -84,9 +84,10 @@ describe("loader", () => {
   });
 
   describe("saveOverrides", () => {
-    it("writes and updates in-memory overrides", () => {
+    it("writes and updates in-memory overrides", async () => {
       initContent();
-      saveOverrides({ lessons: { price: "x" } });
+      mockFs.readFileSync.mockReturnValue("{}");
+      await saveOverrides({ lessons: { price: "x" } });
       expect(getLesson("price")).toBe("x");
       expect(mockFs.writeFileSync).toHaveBeenCalled();
     });

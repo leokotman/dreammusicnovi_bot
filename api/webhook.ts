@@ -2,15 +2,25 @@
  * Vercel serverless handler for Telegram webhook.
  * Telegram sends POST with Update; we pass it to Telegraf and return 200.
  * Set the webhook once after deploy: GET /api/webhook?set=YOUR_SECRET (set WEBHOOK_SET_SECRET in env).
+ * When BLOB_READ_WRITE_TOKEN is set, overrides and admins are loaded from Vercel Blob at the start of each request so admin edits persist.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createBot } from "../src/bot";
+import { ensureOverridesLoaded } from "../src/content/loader";
+import { ensureAdminsLoaded } from "../src/config/admins";
+import { env } from "../src/config/env";
 
 let botInstance: ReturnType<typeof createBot> | null = null;
 
 function getBot() {
   if (!botInstance) botInstance = createBot();
   return botInstance;
+}
+
+function getEnvAdminIds(): string[] {
+  return [env.TEACHER_USER_ID, env.DEV_ID, ...env.ADMIN_IDS].filter(
+    (id): id is string => typeof id === "string"
+  );
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -39,6 +49,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // Load overrides and admins from Blob (or keep in-memory from init/load) so admin edits persist on Vercel
+    await ensureOverridesLoaded();
+    await ensureAdminsLoaded(getEnvAdminIds());
     await getBot().handleUpdate(body);
     return res.status(200).end();
   } catch (err) {

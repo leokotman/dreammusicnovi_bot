@@ -231,14 +231,14 @@ export async function handleAdminEdit(
   const state = getState(userId);
   if (!state) return false;
   if (state.type === "awaiting_edit_lesson") {
-    setLessonOverride(state.key, stripHtml(text));
+    await setLessonOverride(state.key, stripHtml(text));
     clearState(userId);
     const label = getLessonLabel(state.key as LessonKey);
     await reply(`Раздел «${label}» обновлён.`);
     return true;
   }
   if (state.type === "awaiting_edit_faq") {
-    setFaqOverride(state.key, stripHtml(text));
+    await setFaqOverride(state.key, stripHtml(text));
     clearState(userId);
     const label = FAQ_LABELS[state.key as FaqKey];
     await reply(`Ответ «${label}» обновлён.`);
@@ -252,7 +252,7 @@ export async function handleAdminEdit(
       await reply("Нужно отправить одно число (user ID). Попробуйте снова или отправьте /add_admin.");
       return true;
     }
-    addAdmin(num);
+    await addAdmin(num);
     await reply(`Пользователь ${num} добавлен в админы.`);
     return true;
   }

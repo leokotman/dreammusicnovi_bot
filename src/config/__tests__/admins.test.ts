@@ -48,9 +48,9 @@ describe("admins", () => {
   });
 
   describe("addAdmin", () => {
-    it("adds id to set and writes file", () => {
+    it("adds id to set and writes file", async () => {
       loadAdmins(["1"]);
-      addAdmin(2);
+      await addAdmin(2);
       expect(isAdmin("2")).toBe(true);
       expect(mockFs.writeFileSync).toHaveBeenCalled();
       const call = mockFs.writeFileSync.mock.calls[0];

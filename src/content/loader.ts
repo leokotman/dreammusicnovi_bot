@@ -1,15 +1,15 @@
 /**
  * Loads content from HTML files (content/lessons/, content/faq/).
- * Overrides from data/overrides.json are applied when present.
+ * Overrides from storage (Vercel Blob or data/overrides.json) are applied when present.
  */
 
 import * as fs from "fs";
 import * as path from "path";
+import { getOverrides as getOverridesFromStorage, setOverrides, type OverridesData } from "../storage";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
 const CONTENT_LESSONS = path.join(PROJECT_ROOT, "content", "lessons");
 const CONTENT_FAQ = path.join(PROJECT_ROOT, "content", "faq");
-const OVERRIDES_PATH = path.join(PROJECT_ROOT, "data", "overrides.json");
 
 export const LESSON_KEYS = [
   "price",
@@ -28,15 +28,12 @@ export const FAQ_KEYS = [
 export type LessonKey = (typeof LESSON_KEYS)[number];
 export type FaqKey = (typeof FAQ_KEYS)[number];
 
-let overrides: { lessons?: Record<string, string>; faq?: Record<string, string> } = {};
+let overrides: OverridesData = {};
 
-function loadOverrides(): void {
-  try {
-    const raw = fs.readFileSync(OVERRIDES_PATH, "utf-8");
-    overrides = JSON.parse(raw) as typeof overrides;
-  } catch {
-    overrides = {};
-  }
+/** Load overrides from storage (Blob or fs) into memory. Call at start of each webhook request so edits persist. */
+export async function ensureOverridesLoaded(): Promise<void> {
+  const data = await getOverridesFromStorage();
+  overrides = data ?? {};
 }
 
 function readHtmlFile(dir: string, key: string): string {
@@ -58,32 +55,51 @@ export function getFaq(key: FaqKey): string {
   return readHtmlFile(CONTENT_FAQ, key);
 }
 
-export function saveOverrides(newOverrides: typeof overrides): void {
-  const dir = path.dirname(OVERRIDES_PATH);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(OVERRIDES_PATH, JSON.stringify(newOverrides, null, 2), "utf-8");
-  overrides = newOverrides;
-}
-
-export function setLessonOverride(key: string, html: string): void {
-  loadOverrides();
-  const lessons = { ...(overrides.lessons ?? {}) };
+export async function setLessonOverride(key: string, html: string): Promise<void> {
+  const data = await getOverridesFromStorage();
+  const current = data ?? {};
+  const lessons = { ...(current.lessons ?? {}) };
   lessons[key] = html;
-  saveOverrides({ ...overrides, lessons });
+  overrides = { ...current, lessons };
+  await setOverrides(overrides);
 }
 
-export function setFaqOverride(key: string, html: string): void {
-  loadOverrides();
-  const faq = { ...(overrides.faq ?? {}) };
+export async function setFaqOverride(key: string, html: string): Promise<void> {
+  const data = await getOverridesFromStorage();
+  const current = data ?? {};
+  const faq = { ...(current.faq ?? {}) };
   faq[key] = html;
-  saveOverrides({ ...overrides, faq });
+  overrides = { ...current, faq };
+  await setOverrides(overrides);
+}
+
+/** Replace all overrides (used by tests). */
+export async function saveOverrides(newOverrides: OverridesData): Promise<void> {
+  overrides = newOverrides;
+  await setOverrides(overrides);
 }
 
 export function getOverrides(): typeof overrides {
   return { ...overrides };
 }
 
-/** Call once at startup after env is loaded */
+/** Call once at startup after env is loaded (long-polling). For webhook, use ensureOverridesLoaded() at request start. */
 export function initContent(): void {
-  loadOverrides();
+  // Sync load only when using fs (no Blob token). When using Blob, overrides are loaded per-request via ensureOverridesLoaded().
+  if (
+    typeof process.env.BLOB_READ_WRITE_TOKEN !== "string" ||
+    process.env.BLOB_READ_WRITE_TOKEN.length === 0
+  ) {
+    const data = getOverridesSync();
+    overrides = data ?? {};
+  }
+}
+
+function getOverridesSync(): OverridesData | null {
+  try {
+    const raw = fs.readFileSync(path.join(PROJECT_ROOT, "data", "overrides.json"), "utf-8");
+    return JSON.parse(raw) as OverridesData;
+  } catch {
+    return null;
+  }
 }
