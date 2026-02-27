@@ -111,6 +111,49 @@ describe("loader", () => {
     });
   });
 
+  describe("edit merge preserves other keys", () => {
+    it("setSavedLessonContent preserves faqLabelOverrides and other keys", async () => {
+      const existing = {
+        lessons: { price: "old price" },
+        faqLabelOverrides: { noEarForMusic: "У меня нет слуха?" },
+      };
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(existing));
+      initContent();
+      await setSavedLessonContent("price", "updated price");
+      const content = getSavedContent();
+      expect(content.lessons?.price).toBe("updated price");
+      expect(content.faqLabelOverrides?.noEarForMusic).toBe("У меня нет слуха?");
+    });
+
+    it("setSavedFaqLabel preserves lessons and faq content", async () => {
+      const existing = {
+        lessons: { price: "cost" },
+        faq: { amITooOld: "answer" },
+      };
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(existing));
+      initContent();
+      await setSavedFaqLabel("amITooOld", "Новый вопрос?");
+      const content = getSavedContent();
+      expect(content.faqLabelOverrides?.amITooOld).toBe("Новый вопрос?");
+      expect(content.lessons?.price).toBe("cost");
+      expect(content.faq?.amITooOld).toBe("answer");
+    });
+
+    it("setSavedFaqContent preserves lessons and faqLabelOverrides", async () => {
+      const existing = {
+        lessons: { price: "x" },
+        faqLabelOverrides: { amITooOld: "label" },
+      };
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(existing));
+      initContent();
+      await setSavedFaqContent("amITooOld", "new answer");
+      const content = getSavedContent();
+      expect(content.faq?.amITooOld).toBe("new answer");
+      expect(content.lessons?.price).toBe("x");
+      expect(content.faqLabelOverrides?.amITooOld).toBe("label");
+    });
+  });
+
   describe("slugFromLabel (Cyrillic to Latin)", () => {
     it("produces Latin-only key from Russian label", async () => {
       initContent();

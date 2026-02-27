@@ -41,7 +41,8 @@ function useBlob(): boolean {
 export async function loadSavedContent(): Promise<SavedContentData | null> {
   if (useBlob()) {
     try {
-      const result = await get(BLOB_SAVED_CONTENT, { access: "private" });
+      // useCache: false so we always get a body (200); 304 returns stream: null and would cause merge-with-empty then overwrite.
+      const result = await get(BLOB_SAVED_CONTENT, { access: "private", useCache: false });
       if (!result || result.statusCode !== 200 || !result.stream) return null;
       const text = await new Response(result.stream).text();
       return JSON.parse(text) as SavedContentData;
@@ -77,7 +78,7 @@ export async function saveSavedContent(data: SavedContentData): Promise<void> {
 export async function getAdmins(): Promise<AdminsData | null> {
   if (useBlob()) {
     try {
-      const result = await get(BLOB_ADMINS, { access: "private" });
+      const result = await get(BLOB_ADMINS, { access: "private", useCache: false });
       if (!result || result.statusCode !== 200 || !result.stream) return null;
       const text = await new Response(result.stream).text();
       return JSON.parse(text) as AdminsData;
