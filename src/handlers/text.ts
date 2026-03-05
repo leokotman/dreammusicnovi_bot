@@ -36,14 +36,21 @@ export async function handleText(ctx: Context): Promise<void> {
         await ctx.reply(RATE_LIMIT_MESSAGE);
         return;
       }
-      if (env.TEACHER_CHAT_ID) {
+      const teacherChatId = env.TEACHER_CHAT_ID;
+      if (teacherChatId) {
         const from = ctx.from;
         const username = from?.username ? `@${from.username}` : "без username";
         const name = [from?.first_name, from?.last_name].filter(Boolean).join(" ") || "—";
-        await ctx.telegram.sendMessage(
-          env.TEACHER_CHAT_ID,
-          `Новый вопрос от ${name} (${username}, id: ${userId}):\n\n${text}`
-        );
+        const payload = `Новый вопрос от ${name} (${username}, id: ${userId}):\n\n${text}`;
+        try {
+          await ctx.telegram.sendMessage(teacherChatId, payload);
+          console.log("[ask] Forwarded question to teacher chat_id:", teacherChatId);
+        } catch (err) {
+          console.error("[ask] Failed to send to teacher (chat_id=%s):", teacherChatId, err);
+          throw err;
+        }
+      } else {
+        console.warn("[ask] TEACHER_CHAT_ID not set — question NOT forwarded; user still sees thank-you.");
       }
       await ctx.replyWithHTML(THANK_YOU_MESSAGE, getMainMenu());
       return;

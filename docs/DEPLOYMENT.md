@@ -36,7 +36,51 @@ For **Vercel** also set **WEBHOOK_SET_SECRET** (optional): a secret string you u
    https://YOUR_VERCEL_DOMAIN.vercel.app/api/webhook?set=YOUR_WEBHOOK_SET_SECRET
    ```
    (Use the value you set for WEBHOOK_SET_SECRET.) That tells Telegram to send updates to your `/api/webhook` URL. You should see a response like "Webhook set to https://...".
+   **If you tested locally with polling** (and ran `deleteWebhook`), run the same URL again after deploy so updates go back to Vercel.
 6. Test the bot in Telegram: send `/start`. Use `/admin` to edit lesson/FAQ text; changes are stored in Vercel Blob when **BLOB_READ_WRITE_TOKEN** is set.
+7. **Logs:** In Vercel → Project → **Logs** (or **Deployments** → select a deployment → **Functions** → click the webhook function). Look for `[ask]` messages when users submit questions.
+
+---
+
+## Switching webhook ↔ local polling (Vercel users)
+
+When the bot uses a **webhook**, Telegram sends all updates to your Vercel URL. To run the bot **locally** with `npm run dev` (long polling), Telegram must stop using the webhook so your local process can receive updates via `getUpdates`.
+
+**1. Delete the webhook** (before running locally)
+
+Call Telegram’s API once (replace `YOUR_BOT_TOKEN` with your real token):
+
+```bash
+curl "https://api.telegram.org/botYOUR_BOT_TOKEN/deleteWebhook"
+```
+
+You should get `{"ok":true,"result":true}`. From now on, no updates are sent to Vercel.
+
+**2. Run the bot locally**
+
+```bash
+npm run dev
+```
+
+Use the bot in Telegram; updates will go to your local process.
+
+**3. Restore the webhook** (after you’re done testing locally)
+
+So that production (Vercel) receives updates again, set the webhook back. Open in the browser (or `curl`):
+
+```
+https://YOUR_VERCEL_DOMAIN.vercel.app/api/webhook?set=YOUR_WEBHOOK_SET_SECRET
+```
+
+Use the same **WEBHOOK_SET_SECRET** value you set in Vercel env. You should see a response like "Webhook set to https://...". After that, all updates go to Vercel again; stop local `npm run dev` when you’re done.
+
+**Summary**
+
+| Step              | Command / action |
+|-------------------|-------------------|
+| Use Vercel        | Webhook is set → updates go to Vercel. |
+| Switch to local   | `curl .../deleteWebhook` → then `npm run dev`. |
+| Switch back       | Open `.../api/webhook?set=SECRET` in browser. |
 
 ---
 

@@ -132,7 +132,10 @@ export function registerCallbacks(bot: {
     await withErrorHandling(ctx, async () => {
       await ctx.answerCbQuery();
       const userId = ctx.from?.id;
-      if (userId) setState(userId, { type: "awaiting_question" });
+      if (userId) {
+        setState(userId, { type: "awaiting_question" });
+        console.log("[ask] User", userId, "entered «Задать свой вопрос» — awaiting next message.");
+      }
       await ctx.editMessageText(
         "✏️ <b>Задать свой вопрос</b>\n\nОтправьте ваш вопрос в следующем сообщении. Преподаватель получит его и свяжется с вами.",
         {

@@ -50,6 +50,9 @@ export function initContent(): void {
   ) {
     const data = getSavedContentSync();
     savedContent = migrateToUnifiedSections(data ?? {});
+  } else {
+    // Long polling with Blob: no request-time load, so seed defaults so the main menu has buttons
+    savedContent = migrateToUnifiedSections({});
   }
 }
 
