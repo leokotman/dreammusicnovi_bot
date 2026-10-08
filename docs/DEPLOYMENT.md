@@ -19,7 +19,7 @@ Set these on the host (same as in `.env` locally; see `.env.example` and README)
 | `DEV_ID`, `ADMIN_IDS` | No | Extra admins |
 | `TEACHER_TELEGRAM`, `TEACHER_INSTAGRAM`, `TEACHER_EMAIL` | No | Contact links in "Связаться" |
 
-For **Vercel** also set **WEBHOOK_SET_SECRET** (optional): a secret string you use once to set the webhook URL (see below). To make admin edits (saved lesson/FAQ content and `/add_admin`) persist, create a **Vercel Blob** store and set **BLOB_READ_WRITE_TOKEN** (see Vercel section below).
+For **Vercel** also set **WEBHOOK_SET_SECRET** (optional): a secret string you use once to set the webhook URL (see below). To make admin edits (saved lesson/FAQ content and `/add_admin`) persist, connect a **Vercel Blob** store to the project. OIDC is preferred; a static **BLOB_READ_WRITE_TOKEN** is supported as a fallback.
 
 ---
 
@@ -29,7 +29,7 @@ For **Vercel** also set **WEBHOOK_SET_SECRET** (optional): a secret string you u
 
 1. Go to [vercel.com](https://vercel.com) → **Add New** → **Project** → import the **dreammusic-bot** repo.
 2. **Environment variables:** Add **BOT_TOKEN** and any other bot vars (TEACHER_CHAT_ID, TEACHER_USER_ID, etc.). Optionally add **WEBHOOK_SET_SECRET** (e.g. a random string) so you can set the webhook once after deploy.
-3. **Persistent admin data (recommended):** So that edits via `/admin` and admins added via `/add_admin` persist, create a **Blob** store: Vercel Dashboard → **Storage** → **Create Database** → **Blob**. After creating the store, **BLOB_READ_WRITE_TOKEN** is automatically added to your project. No extra env step needed if you use the same project.
+3. **Persistent admin data (recommended):** Create a **Blob** store: Vercel Dashboard → **Storage** → **Create Storage** → **Blob**. On the store's **Projects** tab, connect the project or choose **Update project connections**. In the connection dialog, include the needed environments and save. OIDC is the default authentication for a connected project; the SDK uses the injected `VERCEL_OIDC_TOKEN` together with `BLOB_STORE_ID`. Leave **Add a read-write token env var to this connection** enabled only if you also need the long-lived static `BLOB_READ_WRITE_TOKEN`.
 4. Deploy. Vercel will build and deploy; the `content/` folder is included for the webhook function via `vercel.json`.
 5. **Set the webhook** (once per bot/deploy): Open in the browser:
    ```
@@ -37,7 +37,7 @@ For **Vercel** also set **WEBHOOK_SET_SECRET** (optional): a secret string you u
    ```
    (Use the value you set for WEBHOOK_SET_SECRET.) That tells Telegram to send updates to your `/api/webhook` URL. You should see a response like "Webhook set to https://...".
    **If you tested locally with polling** (and ran `deleteWebhook`), run the same URL again after deploy so updates go back to Vercel.
-6. Test the bot in Telegram: send `/start`. Use `/admin` to edit lesson/FAQ text; changes are stored in Vercel Blob when **BLOB_READ_WRITE_TOKEN** is set.
+6. Test the bot in Telegram: send `/start`. Use `/admin` to edit lesson/FAQ text; changes are stored in Vercel Blob when **BLOB_STORE_ID** (OIDC) or **BLOB_READ_WRITE_TOKEN** (static-token fallback) is configured.
 7. **Logs:** In Vercel → Project → **Logs** (or **Deployments** → select a deployment → **Functions** → click the webhook function). Look for `[ask]` messages when users submit questions.
 
 ---
@@ -113,7 +113,7 @@ Use the same **WEBHOOK_SET_SECRET** value you set in Vercel env. You should see 
 ## Where saved content and admins are stored
 
 - **Saved content** (lesson/FAQ edits via `/admin`) and **admins** (added via `/add_admin`) are stored in:
-  - **Vercel:** [Vercel Blob](https://vercel.com/docs/storage/vercel-blob) when **BLOB_READ_WRITE_TOKEN** is set (create a Blob store in the dashboard; the token is added automatically). Without it, edits do not persist across requests.
+  - **Vercel:** [Vercel Blob](https://vercel.com/docs/vercel-blob) when the store is connected with OIDC (`BLOB_STORE_ID`) or a static **BLOB_READ_WRITE_TOKEN**. Without either, edits do not persist across requests.
   - **Local / Railway / Render:** `data/overrides.json` and `data/admins.json` on disk. On Railway/Render the filesystem is often ephemeral (lost on redeploy); the teacher can re-edit via `/admin` after a deploy.
 
 ---

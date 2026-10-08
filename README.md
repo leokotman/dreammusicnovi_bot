@@ -66,12 +66,12 @@ The bot **now sets commands in code** (on startup and when setting the webhook):
 - **Developer:** Edit HTML in `content/lessons/*.html` and `content/faq/*.html`.
 - **Teacher / admin:** In Telegram, send `/admin` to the bot — a menu appears with “Редактировать «Об уроках»” and “Редактировать «Задать вопрос»”. Pick section and item; the bot shows the current saved text (you can copy and edit). Send the next message with the new text. Button labels in the bot (e.g. “Я уже слишком взрослый?”) are fixed in code; only the answer text changes when you edit.
 
-**Where edits are stored:** On the machine where the bot runs: **`data/overrides.json`** and **`data/admins.json`** (local), or on Vercel **Vercel Blob** when `BLOB_READ_WRITE_TOKEN` is set. Repo HTML files are **not** changed. On load, the bot reads the HTML files and then applies saved content (saved content wins).
+**Where edits are stored:** On the machine where the bot runs: **`data/overrides.json`** and **`data/admins.json`** (local), or on Vercel **Vercel Blob** when the store is connected with OIDC (`BLOB_STORE_ID`) or a static `BLOB_READ_WRITE_TOKEN`. Repo HTML files are **not** changed. On load, the bot reads the HTML files and then applies saved content (saved content wins).
 
 ## Data persistence and deployments
 
 - **Code vs storage:** Default content (lessons, FAQ) lives in the repo (`content/lessons/`, `content/faq/`). Admin edits, added sections/questions, and added admins live in storage (local `data/` or Vercel Blob). You **do not** need to sync the codebase with the blob — at runtime the app always loads defaults from code and applies saved content from storage. The most recent data is in storage; the code is only the baseline.
-- **New deployments do not wipe data.** Saved content and admins are stored in **Vercel Blob** (or local `data/`). Blob is separate from the deployment: redeploying only updates the serverless code; the same `BLOB_READ_WRITE_TOKEN` and blob store are used, so existing saved content and admins stay. The app never writes to storage on startup — it only reads. Writes happen only when an admin explicitly edits or adds something (and the code always merges with existing data before writing).
+- **New deployments do not wipe data.** Saved content and admins are stored in **Vercel Blob** (or local `data/`). Blob is separate from the deployment: redeploying only updates the serverless code; the same Blob store is used, so existing saved content and admins stay. The app never writes to storage on startup — it only reads. Writes happen only when an admin explicitly edits or adds something (and the code always merges with existing data before writing).
 
 ## Rate limit and errors
 
@@ -94,6 +94,6 @@ The bot **now sets commands in code** (on startup and when setting the webhook):
 
 The bot uses long polling and does not listen on a port — run it as a **worker / background service**, not as a web app.
 
-- **Vercel** (webhook, free): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Connect GitHub, set env vars (including `BLOB_READ_WRITE_TOKEN` for persistent saved content and admins), deploy, then open `/api/webhook?set=YOUR_SECRET` once to set the Telegram webhook. No always-on process; saved content and admins persist in Vercel Blob.
+- **Vercel** (webhook, free): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Connect GitHub, set env vars, connect Vercel Blob for persistent saved content and admins, deploy, then open `/api/webhook?set=YOUR_SECRET` once to set the Telegram webhook. No always-on process; saved content and admins persist in Vercel Blob.
 - **Railway** (long polling, paid) or **Render** (long polling, free tier may sleep): same doc. Connect GitHub, set `BOT_TOKEN`, deploy.
 - **Docker:** Run locally or on your own server: `docker build -t dreammusic-bot .` then `docker run --env-file .env dreammusic-bot`.

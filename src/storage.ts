@@ -1,6 +1,6 @@
 /**
  * Persistent storage for saved content (admin edits) and admins.
- * On Vercel (when BLOB_READ_WRITE_TOKEN is set): uses Vercel Blob.
+ * On Vercel (when Blob credentials are configured): uses Vercel Blob.
  * Otherwise: uses local files in data/.
  */
 
@@ -72,13 +72,13 @@ export type SavedContentData = {
 
 export type AdminsData = { ids: number[] };
 
-function useBlob(): boolean {
-  return typeof process.env.BLOB_READ_WRITE_TOKEN === "string" && process.env.BLOB_READ_WRITE_TOKEN.length > 0;
+export function isBlobConfigured(): boolean {
+  return Boolean(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN);
 }
 
 /** Load saved content from Blob or local file. */
 export async function loadSavedContent(): Promise<SavedContentData | null> {
-  if (useBlob()) {
+  if (isBlobConfigured()) {
     try {
       // useCache: false so we always get a body (200); 304 returns stream: null and would cause merge-with-empty then overwrite.
       const result = await get(BLOB_SAVED_CONTENT, { access: "private", useCache: false });
@@ -100,7 +100,7 @@ export async function loadSavedContent(): Promise<SavedContentData | null> {
 /** Save content to Blob or local file. */
 export async function saveSavedContent(data: SavedContentData): Promise<void> {
   const json = JSON.stringify(data, null, 2);
-  if (useBlob()) {
+  if (isBlobConfigured()) {
     await put(BLOB_SAVED_CONTENT, json, {
       access: "private",
       contentType: "application/json",
@@ -115,7 +115,7 @@ export async function saveSavedContent(data: SavedContentData): Promise<void> {
 
 /** Read admins from Blob or local file. */
 export async function getAdmins(): Promise<AdminsData | null> {
-  if (useBlob()) {
+  if (isBlobConfigured()) {
     try {
       const result = await get(BLOB_ADMINS, { access: "private", useCache: false });
       if (!result || result.statusCode !== 200 || !result.stream) return null;
@@ -136,7 +136,7 @@ export async function getAdmins(): Promise<AdminsData | null> {
 /** Write admins to Blob or local file. */
 export async function setAdmins(data: AdminsData): Promise<void> {
   const json = JSON.stringify(data, null, 2);
-  if (useBlob()) {
+  if (isBlobConfigured()) {
     await put(BLOB_ADMINS, json, {
       access: "private",
       contentType: "application/json",

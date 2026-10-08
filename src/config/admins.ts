@@ -5,14 +5,10 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { getAdmins, setAdmins } from "../storage";
+import { getAdmins, isBlobConfigured, setAdmins } from "../storage";
 
 const idSet = new Set<string>();
 const ADMINS_PATH = path.join(process.cwd(), "data", "admins.json");
-
-function useBlob(): boolean {
-  return typeof process.env.BLOB_READ_WRITE_TOKEN === "string" && process.env.BLOB_READ_WRITE_TOKEN.length > 0;
-}
 
 /** Load env IDs and merge with stored admins. Call at bot start (long-poll). When using Blob, call ensureAdminsLoaded() at each webhook request. */
 export function loadAdmins(envIds: string[]): void {
@@ -21,7 +17,7 @@ export function loadAdmins(envIds: string[]): void {
     const t = id.trim();
     if (t) idSet.add(t);
   }
-  if (!useBlob()) {
+  if (!isBlobConfigured()) {
     try {
       const raw = fs.readFileSync(ADMINS_PATH, "utf-8");
       const data = JSON.parse(raw) as { ids?: number[] };

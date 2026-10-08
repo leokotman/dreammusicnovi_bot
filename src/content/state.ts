@@ -4,7 +4,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { loadSavedContent, saveSavedContent, type SavedContentData } from "../storage";
+import { isBlobConfigured, loadSavedContent, saveSavedContent, type SavedContentData } from "../storage";
 import { migrateToUnifiedSections } from "./migration";
 
 const PROJECT_ROOT = path.resolve(process.cwd());
@@ -44,10 +44,7 @@ export async function replaceSavedContent(data: SavedContentData): Promise<void>
 
 /** Call once at startup after env is loaded (long-polling). For webhook, use ensureSavedContentLoaded() at request start. */
 export function initContent(): void {
-  if (
-    typeof process.env.BLOB_READ_WRITE_TOKEN !== "string" ||
-    process.env.BLOB_READ_WRITE_TOKEN.length === 0
-  ) {
+  if (!isBlobConfigured()) {
     const data = getSavedContentSync();
     savedContent = migrateToUnifiedSections(data ?? {});
   } else {
