@@ -7,6 +7,7 @@ module.exports = {
   moduleFileExtensions: ["ts", "js", "json"],
   collectCoverageFrom: [
     "src/**/*.ts",
+    "api/website/**/*.ts",
     "!src/index.ts",
     "!src/bot.ts",
     "!src/config/env.ts",

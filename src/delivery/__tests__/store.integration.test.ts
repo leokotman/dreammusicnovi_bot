@@ -1,0 +1,135 @@
+import { Pool } from "pg";
+import { readFileSync } from "fs";
+import { randomUUID } from "crypto";
+import path from "path";
+import { DeliveryStore } from "../store";
+import { event } from "./fixtures";
+
+// Opt in only with an explicitly created scratch database. No dotenv reads.
+const scratchUrl = process.env.DELIVERY_TEST_DATABASE_URL;
+const integration = scratchUrl ? describe : describe.skip;
+integration("isolated PostgreSQL delivery transactions", () => {
+  let pool: Pool, store: DeliveryStore;
+  beforeAll(async () => {
+    const target = new URL(scratchUrl!);
+    if (target.hostname !== "127.0.0.1" || !/^\/delivery_scratch_[a-z_]+$/.test(target.pathname) || target.search) {
+      throw new Error("Integration tests require an explicit loopback delivery_scratch_* database without URL overrides");
+    }
+    const schema = `delivery_test_${randomUUID().replace(/-/g, "")}`;
+    pool = new Pool({ connectionString: scratchUrl, max: 8, options: `-c search_path=${schema}` });
+    await pool.query(`CREATE SCHEMA ${schema}`);
+    await pool.query(readFileSync(path.resolve(__dirname, "../../../migrations/001_website_delivery.sql"), "utf8"));
+    store = new DeliveryStore(pool);
+  });
+  beforeEach(async () => {
+    // Only test-owned tables in the unique scratch schema are cleared.
+    await pool.query("TRUNCATE website_deliveries,website_delivery_events,website_delivery_limits");
+    await pool.query("UPDATE website_delivery_clock SET next_send_at=now()-interval '1 second'");
+  });
+  afterAll(async () => { if (pool) await pool.end(); });
+  async function ready() { await pool.query("UPDATE website_delivery_clock SET next_send_at=now()-interval '1 second'"); }
+
+  it("deduplicates concurrent acceptance and snapshots recipients permanently", async () => {
+    const result = await Promise.all([store.accept(event, ["111", "111"]), store.accept(event, ["111", "111"])]);
+    expect(result.sort()).toEqual([false, true]);
+    await store.accept(event, ["222"]);
+    const status = await store.status(event.eventId);
+    expect(status.deliveries.map(row => row.destination).sort()).toEqual(["111", event.telegramUserId].sort());
+    expect(status.state).toBe("accepted");
+    await expect(store.accept({ ...event, telegramUserId: "333" }, ["111"])).rejects.toMatchObject({ status: 409 });
+    await expect(store.accept({ ...event, submission: { ...event.submission, name: "changed" } }, ["111"])).rejects.toMatchObject({ status: 409 });
+  });
+  it("rolls back both the event and earlier recipients when a later insert fails", async () => {
+    await expect(store.accept(event, [null as unknown as string])).rejects.toThrow();
+    expect((await pool.query("SELECT count(*)::integer AS count FROM website_delivery_events")).rows[0].count).toBe(0);
+    expect((await pool.query("SELECT count(*)::integer AS count FROM website_deliveries")).rows[0].count).toBe(0);
+    await expect(store.status(event.eventId)).rejects.toMatchObject({ status: 404 });
+  });
+  it("serializes conflicting concurrent payloads", async () => {
+    const results = await Promise.allSettled([
+      store.accept(event, ["111"]), store.accept({ ...event, enrollmentReference: "other" }, ["111"]),
+    ]);
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter(result => result.status === "rejected")).toHaveLength(1);
+  });
+  it("enforces durable rate limits atomically and rolls the window over", async () => {
+    const results = await Promise.allSettled(Array.from({ length: 8 }, () => store.limit("accept", 3)));
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(3);
+    await pool.query("UPDATE website_delivery_limits SET window_start=now()-interval '1 hour'");
+    await expect(store.limit("accept", 3)).resolves.toBeUndefined();
+  });
+  it("claims once under concurrency, reclaims expired leases, and rejects stale completion", async () => {
+    await store.accept(event, ["111"]);
+    const claims = (await Promise.all([store.claim(event.eventId), store.claim(event.eventId)])).filter(Boolean);
+    expect(claims).toHaveLength(1);
+    const old = claims[0]!;
+    expect((await store.status(event.eventId)).state).toBe("processing");
+    expect((await store.pending(event.eventId)).pending).toBe(true);
+    await pool.query("UPDATE website_deliveries SET lease_until=now()-interval '1 second',next_at=now()-interval '1 hour' WHERE id=$1", [old.id]);
+    await ready();
+    const fresh = (await store.claim(event.eventId))!;
+    expect(fresh.id).toBe(old.id);
+    expect(fresh.claim_token).not.toBe(old.claim_token);
+    expect(fresh.part_attempts).toBe(2);
+    expect(await store.finish(old, { messageId: 99 })).toBe(false);
+    expect(await store.finish(fresh, { messageId: 100 })).toBe(true);
+    expect((await store.status(event.eventId)).deliveries.find(row => row.deliveryId === fresh.id)?.messageIds).toEqual([100]);
+  });
+  it("continues other recipients after permanent failure and completes as partial failure", async () => {
+    await store.accept(event, ["111", "222"]);
+    const first = (await store.claim(event.eventId))!;
+    await store.finish(first, { error: "telegram-403" });
+    await ready(); const second = (await store.claim(event.eventId))!;
+    await store.finish(second, { messageId: 20 });
+    expect((await store.status(event.eventId)).state).toBe("processing");
+    await ready(); const third = (await store.claim(event.eventId))!;
+    await store.finish(third, { messageId: 30 });
+    const status = await store.status(event.eventId);
+    expect(status.state).toBe("partial-failure");
+    expect(status.deliveries.filter(row => row.state === "sent")).toHaveLength(2);
+    expect(status.deliveries.find(row => row.state === "failed")?.error).toBe("telegram-403");
+    expect(await store.pending(event.eventId)).toEqual({ pending: false, retryAfterSeconds: 1 });
+    await ready(); expect(await store.claim(event.eventId)).toBeNull();
+  });
+  it("honors rate-limit cooldown across jobs and stops retry exhaustion", async () => {
+    await store.accept(event, ["111"]);
+    const claim = (await store.claim(event.eventId))!;
+    await store.finish(claim, { error: "telegram-rate-limited", retrySeconds: 120, cooldownSeconds: 120 });
+    const secondId = randomUUID();
+    await store.accept({ ...event, eventId: secondId }, ["111"]);
+    expect(await store.claim(secondId)).toBeNull();
+    expect((await store.pending(event.eventId)).retryAfterSeconds).toBeGreaterThanOrEqual(119);
+    await ready();
+    await pool.query("UPDATE website_deliveries SET next_at=now()-interval '1 hour',part_attempts=7 WHERE id=$1", [claim.id]);
+    const last = (await store.claim(event.eventId))!;
+    expect(last.id).toBe(claim.id);
+    await store.finish(last, { error: "telegram-network", retrySeconds: 60 });
+    expect((await store.status(event.eventId)).deliveries.find(row => row.deliveryId === claim.id)?.state).toBe("failed");
+  });
+  it("persists split-part progress and never reclaims already sent parts", async () => {
+    await store.accept(event, []);
+    await pool.query("UPDATE website_deliveries SET parts=$1::jsonb", [JSON.stringify([{ text: "one" }, { text: "two" }])]);
+    const first = (await store.claim(event.eventId))!;
+    await store.finish(first, { messageId: 101 });
+    await pool.query("UPDATE website_deliveries SET next_at=now()-interval '1 second'");
+    await ready();
+    const second = (await store.claim(event.eventId))!;
+    expect(second.next_part).toBe(1); expect(second.parts[0].messageId).toBe(101);
+    expect(second.part_attempts).toBe(1);
+    await store.finish(second, { messageId: 102 });
+    expect((await store.status(event.eventId)).state).toBe("sent");
+    expect((await store.status(event.eventId)).deliveries[0].messageIds).toEqual([101, 102]);
+  });
+  it("recovers only due unfinished work and supports keyset pagination", async () => {
+    await store.accept(event, []);
+    const greaterId = "f858af47-9168-420d-9323-bd48763c5af8";
+    await store.accept({ ...event, eventId: greaterId }, []);
+    expect(await store.recoveryPage(null)).toEqual([event.eventId, greaterId]);
+    expect(await store.recoveryPage(event.eventId)).toEqual([greaterId]);
+    const claim = (await store.claim(event.eventId))!;
+    expect(await store.recoveryPage(null)).toEqual([greaterId]);
+    await store.finish(claim, { error: "telegram-network", retrySeconds: 120 });
+    expect(await store.recoveryPage(null)).toEqual([greaterId]);
+    expect(await store.claim(event.eventId)).toBeNull();
+  });
+});
