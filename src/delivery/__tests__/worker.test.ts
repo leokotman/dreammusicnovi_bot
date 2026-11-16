@@ -63,6 +63,31 @@ describe("Cloudflare delivery consumer", () => {
       expect(invalid.retry).toHaveBeenCalled();
     }
   });
+  it("processes and recovers with the redirect modes supported by Cloudflare", async () => {
+    for (const body of [{ version: 1, jobId: event.eventId }, { version: 1, recoverAfter: null }]) {
+      fetchMock.mockImplementation(async (_url: string, options: RequestInit) => {
+        if (options.redirect !== "follow" && options.redirect !== "manual") throw new TypeError("Invalid redirect value");
+        return Response.json("jobId" in body ? { pending: false } : { nextCursor: null });
+      });
+      const msg = message(body);
+      await worker.queue({ messages: [msg] }, env);
+      expect(msg.ack).toHaveBeenCalledTimes(1);
+      expect(msg.retry).not.toHaveBeenCalled();
+      expect(fetchMock.mock.calls.at(-1)[1].redirect).toBe("manual");
+    }
+  });
+  it("retries redirect responses without acknowledging or forwarding the request", async () => {
+    for (const status of [301, 302, 303, 307, 308]) {
+      fetchMock.mockReset();
+      fetchMock.mockResolvedValue(new Response(null, { status, headers: { Location: "https://other.example.test" } }));
+      const msg = message({ version: 1, jobId: event.eventId });
+      await worker.queue({ messages: [msg] }, env);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][1].redirect).toBe("manual");
+      expect(msg.ack).not.toHaveBeenCalled();
+      expect(msg.retry).toHaveBeenCalledWith({ delaySeconds: 60 });
+    }
+  });
   it("runs paginated daily recovery without dropping continuation", async () => {
     await worker.scheduled({}, env);
     expect(send).toHaveBeenCalledWith({ version: 1, recoverAfter: null });
