@@ -8,7 +8,7 @@ module.exports = {
   collectCoverageFrom: [
     "src/**/*.ts",
     "api/website/**/*.ts",
-    "!src/index.ts",
+    "api/webhook.ts",
     "!src/bot.ts",
     "!src/config/env.ts",
     "!src/storage.ts",
