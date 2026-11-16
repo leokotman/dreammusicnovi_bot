@@ -1,3 +1,5 @@
+import type { ConsentGrant } from "../pairing/consent";
+
 export const TEMPLATE_VERSION = "enrollment-v1";
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const CHAT_ID = /^-?[1-9][0-9]{0,15}$/;
@@ -7,6 +9,7 @@ export class ApiError extends Error {
 }
 
 export interface EnrollmentEvent {
+  consent?: ConsentGrant;
   eventId: string;
   enrollmentReference: string;
   submittedAt: string;
@@ -34,7 +37,7 @@ export function jobId(value: unknown): string {
 }
 
 export function validateEvent(value: unknown): EnrollmentEvent {
-  const body = object(value, ["eventId", "enrollmentReference", "submittedAt", "telegramUserId", "templateVersion", "submission"]);
+  const body = object(value, ["eventId", "enrollmentReference", "submittedAt", "telegramUserId", "templateVersion", "submission", "consent"]);
   const submission = object(body.submission, ["name", "contact", "lessonName", "comment"]);
   const submittedAt = string(body.submittedAt, 32);
   const recipient = string(body.telegramUserId, 16);
@@ -44,11 +47,21 @@ export function validateEvent(value: unknown): EnrollmentEvent {
     throw new ApiError(400, "invalid-request");
   }
   return {
+    ...(body.consent === undefined ? {} : { consent: validateGrant(body.consent, recipient) }),
     eventId: jobId(body.eventId), enrollmentReference: string(body.enrollmentReference, 128),
     submittedAt, telegramUserId: recipient, templateVersion: TEMPLATE_VERSION,
     submission: { name: string(submission.name, 200), contact: string(submission.contact, 254),
       lessonName: string(submission.lessonName, 500), comment: string(submission.comment === undefined ? "" : submission.comment, 500, true) },
   };
+}
+
+export function validateGrant(value: unknown, userId?: string): ConsentGrant {
+  const grant = object(value, ["id", "userId", "generation"]);
+  if (typeof grant.userId !== "string" || !/^[1-9][0-9]{0,15}$/.test(grant.userId) ||
+      userId !== undefined && grant.userId !== userId || typeof grant.generation !== "string" ||
+      !/^(0|[1-9][0-9]{0,18})$/.test(grant.generation) || BigInt(grant.generation) > 9223372036854775807n)
+    throw new ApiError(400, "invalid-request");
+  return { id: jobId(grant.id), userId: grant.userId, generation: grant.generation };
 }
 
 export interface MessagePart { text: string; messageId?: number }
@@ -66,13 +79,13 @@ export function messageParts(text: string): MessagePart[] {
   return parts;
 }
 
-export function destinations(event: EnrollmentEvent, adminIds: string[]): Destination[] {
+export function destinations(event: EnrollmentEvent, adminIds: string[], visitorAllowed = true): Destination[] {
   const { name, contact, lessonName, comment } = event.submission;
   const details = `Имя: ${name}\nКонтакт: ${contact}\nЗанятие / курс: ${lessonName}${comment ? `\nКомментарий: ${comment}` : ""}`;
   return [...new Set([event.telegramUserId, ...adminIds])].map(chatId => {
     const visitor = chatId === event.telegramUserId;
     const admin = adminIds.includes(chatId);
-    const heading = visitor ? "Спасибо! Ваша заявка получена." : "Новая заявка с сайта DreamMusicNovi.";
+    const heading = visitor && visitorAllowed ? "Спасибо! Ваша заявка получена." : "Новая заявка с сайта DreamMusicNovi.";
     const staff = admin ? `\nНомер заявки: ${event.enrollmentReference}\nВремя подачи (UTC): ${event.submittedAt}` : "";
     return { chatId, roles: [...(visitor ? ["visitor"] : []), ...(admin ? ["admin"] : [])],
       parts: messageParts(`${heading}\n\n${details}${staff}`) };
@@ -80,8 +93,10 @@ export function destinations(event: EnrollmentEvent, adminIds: string[]): Destin
 }
 
 export function aggregate(states: string[]): string {
+  if (states.every(state => state === "cancelled")) return "cancelled";
   if (states.every(state => state === "sent")) return "sent";
+  if (states.every(state => state === "sent" || state === "cancelled")) return "partial-cancellation";
   if (states.every(state => state === "failed")) return "failed";
-  if (states.every(state => state === "sent" || state === "failed")) return "partial-failure";
+  if (states.every(state => state === "sent" || state === "failed" || state === "cancelled")) return "partial-failure";
   return states.every(state => state === "pending") ? "accepted" : "processing";
 }

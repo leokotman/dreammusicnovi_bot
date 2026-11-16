@@ -2,8 +2,14 @@ import { Pool } from "pg";
 import { readFileSync } from "fs";
 import { randomUUID } from "crypto";
 import path from "path";
+import { ConsentStore } from "../../pairing/consent";
+import { DeliveryService } from "../service";
+import { send, publish } from "../transport";
+import { config } from "./fixtures";
 import { DeliveryStore } from "../store";
 import { event } from "./fixtures";
+
+jest.mock("../transport", () => ({ send: jest.fn(), publish: jest.fn() }));
 
 // Opt in only with an explicitly created scratch database. No dotenv reads.
 const scratchUrl = process.env.DELIVERY_TEST_DATABASE_URL;
@@ -19,9 +25,20 @@ integration("isolated PostgreSQL delivery transactions", () => {
     pool = new Pool({ connectionString: scratchUrl, max: 8, options: `-c search_path=${schema}` });
     await pool.query(`CREATE SCHEMA ${schema}`);
     await pool.query(readFileSync(path.resolve(__dirname, "../../../migrations/001_website_delivery.sql"), "utf8"));
+    await pool.query(readFileSync(path.resolve(__dirname, "../../../migrations/002_website_consent.sql"), "utf8"));
+    await pool.query("INSERT INTO website_delivery_events(id,payload) VALUES ($1,$2::jsonb)", [event.eventId, JSON.stringify(event)]);
+    await pool.query(`INSERT INTO website_deliveries(id,event_id,destination,roles,parts)
+      VALUES ($1,$2,$3,$4,$5::jsonb)`, [randomUUID(), event.eventId, event.telegramUserId, ["visitor"], JSON.stringify([{ text: "existing", messageId: 42 }])]);
+    const existing = (await pool.query("SELECT * FROM website_deliveries")).rows;
+    await pool.query(readFileSync(path.resolve(__dirname, "../../../migrations/003_website_delivery_consent.sql"), "utf8"));
+    expect((await pool.query("SELECT * FROM website_deliveries")).rows).toEqual(existing.map(row => ({ ...row, visitor_cancelled: null })));
+    expect((await pool.query("SELECT payload FROM website_delivery_events")).rows).toEqual([{ payload: event }]);
     store = new DeliveryStore(pool);
   });
   beforeEach(async () => {
+    jest.clearAllMocks();
+    (send as jest.Mock).mockResolvedValue({ messageId: 333 });
+    await pool.query("TRUNCATE website_consent_revocations,website_consent_grants,website_consent_users");
     // Only test-owned tables in the unique scratch schema are cleared.
     await pool.query("TRUNCATE website_deliveries,website_delivery_events,website_delivery_limits");
     await pool.query("UPDATE website_delivery_clock SET next_send_at=now()-interval '1 second'");
@@ -132,4 +149,106 @@ integration("isolated PostgreSQL delivery transactions", () => {
     expect(await store.recoveryPage(null)).toEqual([greaterId]);
     expect(await store.claim(event.eventId)).toBeNull();
   });
+  it("cancels revoked visitor acceptance terminally while retaining staff notifications", async () => {
+    const consent = new ConsentStore(pool);
+    await consent.revoke(event.telegramUserId, 100);
+    const service = new DeliveryService(store, { ...config, adminIds: ["111"] });
+    await service.accept(event);
+    const visitor = (await store.status(event.eventId)).deliveries.find(d => d.roles.includes("visitor"))!;
+    expect(visitor).toMatchObject({ state: "cancelled", visitorOutcome: "cancelled", nextAttemptAt: null });
+    await service.process(event.eventId);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect((send as jest.Mock).mock.calls[0][1]).toBe("111");
+    expect((await store.status(event.eventId)).state).toBe("partial-cancellation");
+    expect(await store.recoveryPage(null)).toEqual([]);
+    expect(await store.pending(event.eventId)).toEqual({ pending: false, retryAfterSeconds: 1 });
+    await service.accept(event);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  it("cancels a split legacy delivery after revocation without reviving it on reconnect", async () => {
+    await store.accept(event, []);
+    await pool.query("UPDATE website_deliveries SET parts=$1::jsonb", [JSON.stringify([{ text: "one" }, { text: "two" }])]);
+    const service = new DeliveryService(store, config), consent = service.consent;
+    await service.process(event.eventId);
+    await consent.revoke(event.telegramUserId, 1);
+    await pool.query("UPDATE website_deliveries SET next_at=now()-interval '1 second'"); await ready();
+    await service.process(event.eventId);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect((await store.status(event.eventId))).toMatchObject({ version: 2, state: "cancelled", deliveries: [{ messageIds: [333] }] });
+    const grant = await consent.candidate(event.telegramUserId, "a".repeat(64), new Date(Date.now()+590000));
+    await consent.activate(grant);
+    await ready(); await service.process(event.eventId);
+    expect(send).toHaveBeenCalledTimes(1);
+    const modern = { ...event, eventId: randomUUID(), consent: grant };
+    await service.accept(modern); await ready(); await service.process(modern.eventId);
+    expect(send).toHaveBeenCalledTimes(2);
+    await consent.revoke(event.telegramUserId, 2);
+    const stale = { ...modern, eventId: randomUUID() };
+    await service.accept(stale);
+    expect((await store.status(stale.eventId)).deliveries.find(d => d.roles.includes("visitor"))?.state).toBe("cancelled");
+  });
+  it("replaces only unsent merged visitor content and preserves claim fencing", async () => {
+    await store.accept(event, [event.telegramUserId]);
+    await pool.query("UPDATE website_deliveries SET parts=$1::jsonb", [JSON.stringify([{ text: "sent", messageId: 100 }, { text: "visitor tail" }])]);
+    await pool.query("UPDATE website_deliveries SET next_part=1,part_attempts=5");
+    const claim = (await store.claim(event.eventId))!;
+    expect(await store.cancelVisitor({ ...claim, claim_token: randomUUID() })).toBeNull();
+    const staff = (await store.cancelVisitor(claim))!;
+    expect(staff.parts[0]).toEqual({ text: "sent", messageId: 100 });
+    expect(staff.parts[1].text).toContain("Новая заявка");
+    expect(staff.parts.map(p => p.text).join("")).not.toContain("Спасибо!");
+    expect(staff.part_attempts).toBe(1);
+    expect(staff.claim_token).not.toBe(claim.claim_token);
+    expect(await store.finish(claim, { messageId: 999 })).toBe(false);
+    expect(await store.cancelVisitor(staff)).toBeNull();
+    await store.finish(staff, { messageId: 101 });
+    expect((await store.status(event.eventId)).deliveries[0]).toMatchObject({ state: "sent", visitorOutcome: "cancelled", messageIds: [100,101] });
+    expect(await store.claim(event.eventId)).toBeNull();
+    expect((await store.status(event.eventId)).state).toBe("partial-cancellation");
+  });
+  it("uses a staff-only snapshot when merged consent is already revoked at acceptance", async () => {
+    await store.accept(event, [event.telegramUserId], false);
+    const claim = (await store.claim(event.eventId))!;
+    expect(claim.visitor_cancelled).toBe(true);
+    expect(claim.parts[0].text).toContain("Новая заявка");
+    expect(claim.parts[0].text).not.toContain("Спасибо!");
+    await store.finish(claim, { error: "telegram-403" });
+    expect((await store.status(event.eventId)).deliveries[0]).toMatchObject({ state: "failed", visitorOutcome: "cancelled" });
+  });
+  it("observes revocation after claim and leaves unrelated staff work available", async () => {
+    await store.accept(event, []);
+    const claim = (await store.claim(event.eventId))!;
+    const service = new DeliveryService(store, config);
+    await service.consent.revoke(event.telegramUserId, 9);
+    const original = store.claim.bind(store);
+    store.claim = async () => claim;
+    try { await service.process(event.eventId); } finally { store.claim = original; }
+    expect(send).not.toHaveBeenCalled();
+    expect((await store.status(event.eventId)).state).toBe("cancelled");
+  });
+
+  it("fences modern queued grants after revocation and keeps cancellation across recovery and reconnect", async () => {
+    const service = new DeliveryService(store, { ...config, adminIds: [event.telegramUserId] });
+    const grant = await service.consent.candidate(event.telegramUserId, "b".repeat(64), new Date(Date.now()+590000));
+    await service.consent.activate(grant);
+    const modern = { ...event, consent: grant };
+    await service.accept(modern);
+    await service.consent.revoke(event.telegramUserId, 10);
+    (send as jest.Mock).mockResolvedValueOnce({ error: "temporary", retrySeconds: 1 });
+    await service.process(event.eventId);
+    expect((send as jest.Mock).mock.calls[0][2]).toContain("Новая заявка");
+    expect((await store.status(event.eventId)).deliveries[0]).toMatchObject({ state: "retrying", visitorOutcome: "cancelled" });
+    const fresh = await service.consent.candidate(event.telegramUserId, "c".repeat(64), new Date(Date.now()+590000));
+    await service.consent.activate(fresh);
+    await pool.query("UPDATE website_deliveries SET next_at=now()-interval '1 second'"); await ready();
+    expect(await store.recoveryPage(null)).toEqual([event.eventId]);
+    await service.accept(modern); // Immutable duplicate must retain its cancelled snapshot.
+    const restarted = new DeliveryService(new DeliveryStore(pool), config);
+    await restarted.process(event.eventId);
+    expect((send as jest.Mock).mock.calls[1][2]).toContain("Новая заявка");
+    expect((send as jest.Mock).mock.calls[1][2]).not.toContain("Спасибо!");
+    expect((await store.status(event.eventId)).state).toBe("partial-cancellation");
+    expect(await store.recoveryPage(null)).toEqual([]);
+  });
+
 });

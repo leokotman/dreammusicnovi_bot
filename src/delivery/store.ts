@@ -5,6 +5,7 @@ import { aggregate, ApiError, destinations, EnrollmentEvent, MessagePart } from 
 export interface Claim {
   id: string; event_id: string; destination: string; parts: MessagePart[];
   next_part: number; part_attempts: number; claim_token: string;
+  roles: string[]; visitor_cancelled: boolean | null; payload: EnrollmentEvent;
 }
 export type Outcome = { messageId: number } | { error: string; retrySeconds?: number; cooldownSeconds?: number };
 
@@ -37,7 +38,7 @@ export class DeliveryStore {
     if (!result.rowCount) throw new ApiError(429, "rate-limited");
   }
 
-  async accept(event: EnrollmentEvent, admins: string[]): Promise<boolean> {
+  async accept(event: EnrollmentEvent, admins: string[], visitorAllowed = true): Promise<boolean> {
     const payload = JSON.stringify(event);
     return this.transaction(async client => {
       const inserted = await client.query(`INSERT INTO website_delivery_events(id, payload)
@@ -48,23 +49,29 @@ export class DeliveryStore {
         return false;
       }
       for (const destination of destinations(event, admins)) {
-        await client.query(`INSERT INTO website_deliveries(id,event_id,destination,roles,parts)
-          VALUES ($1,$2,$3,$4,$5::jsonb)`, [randomUUID(), event.eventId, destination.chatId, destination.roles, JSON.stringify(destination.parts)]);
+        const cancelled = !visitorAllowed && destination.roles.includes("visitor");
+        const staff = cancelled && destination.roles.includes("admin");
+        const parts = staff ? destinations(event, [destination.chatId], false).find(d => d.chatId === destination.chatId)!.parts : destination.parts;
+        await client.query(`INSERT INTO website_deliveries(id,event_id,destination,roles,parts,visitor_cancelled,state,error_code)
+          VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`, [randomUUID(), event.eventId, destination.chatId, destination.roles,
+          JSON.stringify(parts), cancelled || null, cancelled && !staff ? "failed" : "pending",
+          cancelled && !staff ? "consent-revoked" : null]);
       }
       return true;
     });
   }
 
   async status(id: string) {
-    const result = await this.pool.query(`SELECT id,destination,roles,state,attempts,part_attempts,next_at,lease_until,error_code,parts
+    const result = await this.pool.query(`SELECT id,destination,roles,state,attempts,part_attempts,next_at,lease_until,error_code,parts,visitor_cancelled
       FROM website_deliveries WHERE event_id=$1 ORDER BY destination`, [id]);
     if (!result.rowCount) throw new ApiError(404, "job-not-found");
     return {
-      jobId: id, state: aggregate(result.rows.map(row => row.state as string)),
+      version: 2, jobId: id, state: aggregate(result.rows.flatMap(row => row.visitor_cancelled ? (row.roles.includes("admin") ? [row.state as string, "cancelled"] : ["cancelled"]) : [row.state as string])),
       deliveries: result.rows.map(row => ({
         deliveryId: row.id as string, destination: row.destination as string, roles: row.roles as string[],
-        state: row.state as string, attempts: row.attempts as number, partAttempts: row.part_attempts as number,
+        state: row.visitor_cancelled && row.roles.length === 1 ? "cancelled" : row.state as string, attempts: row.attempts as number, partAttempts: row.part_attempts as number,
         nextAttemptAt: ["sent", "failed"].includes(row.state) ? null : row.lease_until ?? row.next_at,
+        visitorOutcome: row.roles.includes("visitor") ? (row.visitor_cancelled ? "cancelled" : row.state) : null,
         error: row.error_code as string | null,
         messageIds: (row.parts as MessagePart[]).flatMap(part => part.messageId === undefined ? [] : [part.messageId]),
       })),
@@ -86,8 +93,26 @@ export class DeliveryStore {
         WHERE id=$1 RETURNING *`, [result.rows[0].id, randomUUID()]);
       // Conservative bot-wide pacing also bounds bursts across concurrent jobs.
       await client.query("UPDATE website_delivery_clock SET next_send_at=now()+interval '1 second'");
-      return claimed.rows[0];
+      const payload = await client.query("SELECT payload FROM website_delivery_events WHERE id=$1", [id]);
+      return { ...claimed.rows[0], payload: payload.rows[0].payload as EnrollmentEvent };
     });
+  }
+
+  async cancelVisitor(claim: Claim): Promise<Claim | null> {
+    const staff = claim.roles.includes("admin");
+    const parts = claim.parts.slice(0, claim.next_part);
+    if (staff) {
+      const replacement = destinations(claim.payload, [claim.destination], false).find(d => d.chatId === claim.destination)!.parts;
+      parts.push(...replacement);
+    }
+    const result = await this.pool.query<Claim>(`UPDATE website_deliveries SET
+      visitor_cancelled=true,parts=$3::jsonb,state=$4,error_code=$5,
+      claim_token=CASE WHEN $6 THEN $7::uuid ELSE NULL END,
+      lease_until=CASE WHEN $6 THEN lease_until ELSE NULL END,
+      part_attempts=CASE WHEN $6 THEN 1 ELSE part_attempts END
+      WHERE id=$1 AND claim_token=$2 AND visitor_cancelled IS NOT TRUE RETURNING *`,
+    [claim.id, claim.claim_token, JSON.stringify(parts), staff ? "processing" : "failed", staff ? null : "consent-revoked", staff, randomUUID()]);
+    return staff && result.rowCount ? { ...result.rows[0], payload: claim.payload } : null;
   }
 
   async finish(claim: Claim, outcome: Outcome): Promise<boolean> {

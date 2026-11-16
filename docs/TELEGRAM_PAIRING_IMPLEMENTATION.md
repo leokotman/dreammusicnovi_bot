@@ -71,16 +71,63 @@ Do not enable pairing/disconnect until those paths enforce it together. Migratio
 Keep additive tables and tombstones on rollback; never deploy a runtime that
 bypasses consent enforcement after this feature is activated.
 
+## Third increment: consent enforcement and authenticated consent interfaces
+
+- Delivery acceptance checks the durable authority using the event's optional exact
+  `{ id, userId, generation }` consent grant. Grant fields are strictly validated;
+  recipient mismatch, noncanonical generation and values above PostgreSQL bigint
+  are rejected. Legacy events retain the permanent first-revocation fence.
+- Every visitor message part checks consent again after claiming, immediately
+  before sending. Authority failures fail closed and leave the lease recoverable.
+  Staff-only destinations do not depend on visitor consent during sending.
+- Revoked acceptance still durably accepts the immutable event and preserves staff
+  destinations. Visitor cancellation is terminal, including across duplicate
+  acceptance, queue recovery, process restart and later reconnection. No previously
+  cancelled job is assigned a new grant.
+- Additive `003_website_delivery_consent.sql` adds one nullable boolean, without
+  rewriting existing snapshots, state constraints, indexes or migration history.
+  Internally, visitor-only cancellation uses terminal `failed` storage with
+  `consent-revoked`; the versioned public contract distinguishes cancellation from
+  transport failure. Existing queue claim/recovery filters remain correct.
+- Status responses now have `version: 2`, per-destination `visitorOutcome` (null for
+  staff-only destinations), terminal visitor `cancelled`, and aggregate
+  `cancelled`/`partial-cancellation`. Failed staff transport remains a failure even
+  when the visitor was cancelled. The acceptance response remains its existing
+  jobId/state shape and may also return the new aggregate cancellation states.
+- Merged visitor/staff destinations retain one destination record. Revocation
+  preserves sent message IDs, replaces only the unsent suffix with the staff
+  template, resets that template's part retry counter and rotates the claim token.
+  Stale completion/cancellation cannot restore visitor text. Later retries use
+  the persisted staff-only suffix even after reconnect. Staff authorization can
+  repeat submission details already present in a sent visitor prefix; it does not
+  re-send those visitor parts or their welcome heading.
+- Authenticated POST `/api/website/consent/check` accepts `{ userId, consent? }`
+  and returns `{ version: 1, allowed }`. POST `/api/website/consent/activate`
+  accepts `{ consent }` and returns `{ version: 1, active: true }` only after
+  durable activation. Both use website API bearer secrets (not execution secrets),
+  existing delivery enable/configuration checks, bounded strict JSON, persistent
+  rate limits, no-store responses and redacted errors. Activation cannot create a
+  candidate; only an existing matching, unexpired candidate can activate.
+
+This increment does not expose disconnect or Start pairing. No new enable switch
+or runtime configuration was introduced. Before deployment, reviewed migrations
+002 and 003 and a website reader supporting status v2 are required; the current
+website still expects the earlier contract. This is a code compatibility boundary,
+not an infrastructure or credential prerequisite for continued implementation.
+Neither migration has been applied to a runtime database. Never roll back to a
+runtime that bypasses these checks after account-wide revocation is exposed.
+
 ## Remaining work
 
-1. Wire the durable consent foundation into authenticated candidate/activation
-   services and account-wide disconnect/block handling; keep controls disabled
-   until delivery enforcement is complete.
-2. Versioned cancelled visitor outcomes, merged visitor/staff destinations and
-   revocation checks at acceptance and immediately before each visitor message part.
-3. Website additive schema, persistent limits, begin/candidate/verify/cancel APIs,
-   reproducible browser-bound proof, revocation-aware enrollment and Russian UI/QR.
-4. Actual verified local database migration/readiness gates, cross-repository tests,
+1. Authenticated candidate registration, website callback/client and recognized
+   pairing Start handling, then private-chat command/menu disconnect and
+   authenticated block events. Keep controls disabled until the compatible website
+   contract and complete handler path are ready; unblock/ordinary Start must not
+   restore consent. Durable duplicate/out-of-order update fencing already exists.
+2. Website additive schema, persistent limits, begin/candidate/verify/cancel APIs,
+   reproducible browser-bound proof, revocation-aware enrollment, status-v2
+   validation/reconciliation/read-only admin display, and Russian Start/code/QR UI.
+3. Actual verified local database migration/readiness gates, cross-repository tests,
    isolated staging acceptance and separately authorized production release.
 
 Preserve both OIDC archive branches. Never deploy an old runtime that bypasses
@@ -100,3 +147,20 @@ Official references: [webhooks](https://core.telegram.org/bots/api#setwebhook),
   check. This is scratch evidence only, not a runtime migration/readiness claim.
 - No runtime migration, credential change, external Telegram call, commit, push
   or deployment performed. The temporary test PostgreSQL server was stopped.
+
+## Third-increment validation (2026-11-16)
+
+- Build and `git diff --check` passed. Final coverage: **33 suites, 426 tests
+  passed, none skipped**, including all 23 real PostgreSQL integration tests.
+- Changed runtime modules (`contract`, `http`, `service`, `store`) and both new
+  consent routes: **100% statements, branches, functions and lines**. Existing
+  consent storage retains 100% across those metrics. Whole-repository coverage:
+  81.06% statements, 65.29% branches, 80.28% functions, 82.66% lines.
+- Real SQL tests cover migration preservation of existing snapshots/message IDs,
+  revoked acceptance, claim-time revocation, split legacy cancellation, modern
+  grant fencing, immutable duplicate acceptance, staff-only replacements, stale
+  token rejection, retry/recovery/restart and reconnection without revival.
+- Tests used only a new temporary loopback PostgreSQL cluster with synthetic data
+  and mocked Telegram/queue transport. No dotenv or runtime database access.
+- No runtime migration, secrets/configuration change, external Telegram call,
+  commit, push or deployment. Both OIDC archive branches remain intact.

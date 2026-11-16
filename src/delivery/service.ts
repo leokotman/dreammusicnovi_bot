@@ -1,13 +1,14 @@
+import { ConsentStore } from "../pairing/consent";
 import { DeliveryConfig } from "./config";
 import { EnrollmentEvent } from "./contract";
 import { DeliveryStore } from "./store";
 import { publish, send } from "./transport";
 
 export class DeliveryService {
-  constructor(public store: DeliveryStore, public config: DeliveryConfig) {}
+  constructor(public store: DeliveryStore, public config: DeliveryConfig, public consent = new ConsentStore(store.pool)) {}
 
   async accept(event: EnrollmentEvent) {
-    const created = await this.store.accept(event, this.config.adminIds);
+    const created = await this.store.accept(event, this.config.adminIds, await this.consent.allows(event.telegramUserId, event.consent));
     const pending = await this.store.pending(event.eventId);
     if (pending.pending) {
       try { await publish(this.config, event.eventId, pending.retryAfterSeconds); }
@@ -19,7 +20,11 @@ export class DeliveryService {
   async process(id: string) {
     await this.store.status(id);
     // One message part per invocation bounds network time and shares bot-wide pacing.
-    const claim = await this.store.claim(id);
+    let claim = await this.store.claim(id);
+    if (claim && claim.roles.includes("visitor") && !claim.visitor_cancelled &&
+        !await this.consent.allows(claim.payload.telegramUserId, claim.payload.consent)) {
+      claim = await this.store.cancelVisitor(claim);
+    }
     if (claim) {
       const outcome = claim.part_attempts > 8 ? { error: "attempts-exhausted" } :
         await send(this.config, claim.destination, claim.parts[claim.next_part].text, claim.part_attempts);

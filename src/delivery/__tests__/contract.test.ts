@@ -76,3 +76,28 @@ describe("fail-closed configuration", () => {
     ["DELIVERY_QUEUE_PUBLISH_SECRET", "e".repeat(32)],
   ])("rejects invalid %s", (key, value) => { expect(() => readConfig({ ...configEnv(), [key as string]: value })).toThrow(); });
 });
+
+
+describe("consent grant contract", () => {
+  const { validateGrant } = require("../contract") as typeof import("../contract");
+  const grant = { id: "e858af47-9168-420d-9323-bd48763c5af8", userId: "123456789", generation: "0" };
+  it("preserves explicit grants and normalizes their IDs", () => {
+    expect(validateGrant({ ...grant, id: grant.id.toUpperCase() })).toEqual(grant);
+    expect(validateEvent({ ...event, consent: grant }).consent).toEqual(grant);
+    expect(validateGrant({ ...grant, generation: "9223372036854775807" })).toMatchObject({ generation: "9223372036854775807" });
+  });
+  it.each([null, {}, { ...grant, extra: true }, { ...grant, userId: 123 }, { ...grant, userId: "0" },
+    { ...grant, generation: 0 }, { ...grant, generation: "01" }, { ...grant, generation: "-1" },
+    { ...grant, generation: "9223372036854775808" }, { ...grant, id: "invalid" }])("rejects malformed grants %#", value => {
+    expect(() => validateGrant(value)).toThrow();
+  });
+  it("rejects enrollment recipient/grant mismatches", () => {
+    expect(() => validateEvent({ ...event, consent: { ...grant, userId: "111" } })).toThrow();
+  });
+  it("distinguishes cancellation from transport failure", () => {
+    expect(aggregate(["cancelled"])).toBe("cancelled");
+    expect(aggregate(["sent", "cancelled"])).toBe("partial-cancellation");
+    expect(aggregate(["failed", "cancelled"])).toBe("partial-failure");
+    expect(aggregate(["cancelled", "retrying"])).toBe("processing");
+  });
+});

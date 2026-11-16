@@ -5,11 +5,13 @@ import { DeliveryService } from "../service";
 import { config, event } from "./fixtures";
 
 describe("authenticated website API", () => {
-  const active = { store: { limit: jest.fn(), status: jest.fn() }, accept: jest.fn(), process: jest.fn(), recover: jest.fn() };
+  const active = { consent: { activate: jest.fn(), allows: jest.fn() }, store: { limit: jest.fn(), status: jest.fn() }, accept: jest.fn(), process: jest.fn(), recover: jest.fn() };
   const getService = jest.fn(() => active as unknown as DeliveryService);
   let response: { setHeader: jest.Mock; status: jest.Mock; json: jest.Mock };
   beforeEach(() => {
     jest.clearAllMocks();
+    active.consent.activate.mockResolvedValue(undefined);
+    active.consent.allows.mockResolvedValue(false);
     active.store.limit.mockResolvedValue(undefined);
     active.store.status.mockResolvedValue({ state: "sent" });
     active.accept.mockResolvedValue({ created: true, result: { jobId: event.eventId, state: "accepted" } });
@@ -78,4 +80,21 @@ describe("authenticated website API", () => {
     jest.clearAllMocks();
     expect((await call("accept", {}, () => { throw new ApiError(503, "delivery-disabled"); })).body).toEqual({ error: "delivery-disabled" });
   });
+  it("authenticates consent interfaces and activates only the exact durable grant", async () => {
+    const grant = { id: event.eventId, userId: event.telegramUserId, generation: "0" };
+    expect((await call("consent-check", { body: { userId: event.telegramUserId } })).body).toEqual({ version: 1, allowed: false });
+    expect(active.consent.allows).toHaveBeenCalledWith(event.telegramUserId, undefined);
+    active.consent.allows.mockResolvedValue(true);
+    expect((await call("consent-check", { body: { userId: event.telegramUserId, consent: grant } })).body.allowed).toBe(true);
+    expect(active.consent.allows).toHaveBeenLastCalledWith(event.telegramUserId, grant);
+    expect((await call("consent-activate", { body: { consent: grant } })).body).toEqual({ version: 1, active: true });
+    expect(active.consent.activate).toHaveBeenCalledWith(grant);
+    expect((await call("consent-check", { body: { userId: 123 } })).status).toBe(400);
+    expect((await call("consent-check", { body: { userId: "0" } })).status).toBe(400);
+    expect((await call("consent-check", { body: { userId: "111", consent: grant } })).status).toBe(400);
+    expect((await call("consent-activate", { headers: { authorization: `Bearer ${config.executionSecrets[0]}` }, body: { consent: grant } })).status).toBe(401);
+    active.consent.activate.mockRejectedValue(new ApiError(409, "consent-revoked"));
+    expect((await call("consent-activate", { body: { consent: grant } })).body).toEqual({ error: "consent-revoked" });
+  });
+
 });

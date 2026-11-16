@@ -1,10 +1,10 @@
 import { createHash, timingSafeEqual } from "crypto";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { ApiError, jobId, object, validateEvent } from "./contract";
+import { ApiError, jobId, object, validateEvent, validateGrant } from "./contract";
 import { DeliveryService } from "./service";
 import { DeliveryConfig } from "./config";
 
-export type Operation = "accept" | "status" | "process" | "recover";
+export type Operation = "accept" | "status" | "process" | "recover" | "consent-check" | "consent-activate";
 export function authenticated(header: unknown, secrets: string[]): boolean {
   if (typeof header !== "string" || header.length > 512) return false;
   const digest = (value: string) => createHash("sha256").update(value).digest();
@@ -40,6 +40,17 @@ export function createHandler(operation: Operation, config: () => DeliveryConfig
       if (operation === "accept") {
         const accepted = await active.accept(validateEvent(value));
         return res.status(accepted.created ? 202 : 200).json(accepted.result);
+      }
+      if (operation === "consent-activate") {
+        const grant = validateGrant(object(value, ["consent"]).consent);
+        await active.consent.activate(grant);
+        return res.status(200).json({ version: 1, active: true });
+      }
+      if (operation === "consent-check") {
+        const input = object(value, ["userId", "consent"]);
+        if (typeof input.userId !== "string" || !/^[1-9][0-9]{0,15}$/.test(input.userId)) throw new ApiError(400, "invalid-request");
+        const grant = input.consent === undefined ? undefined : validateGrant(input.consent, input.userId);
+        return res.status(200).json({ version: 1, allowed: await active.consent.allows(input.userId, grant) });
       }
       if (operation === "process") return res.status(200).json(await active.process(jobId(object(value, ["jobId"]).jobId)));
       const cursor = object(value, ["after"]).after;
