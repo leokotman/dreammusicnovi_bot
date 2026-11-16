@@ -41,7 +41,8 @@ async function authorized(header: string | null, secret: string): Promise<boolea
 async function call(env: WorkerEnv, operation: string, body: unknown) {
   const response = await fetch(`${env.BOT_BASE_URL}/api/website/enrollment-confirmations/${operation}`, {
     method: "POST", headers: { authorization: `Bearer ${env.EXECUTION_SECRET}`, "content-type": "application/json" },
-    body: JSON.stringify(body), signal: AbortSignal.timeout(20000), redirect: "error",
+    // Workers support manual/follow only; reject 3xx below without forwarding credentials.
+    body: JSON.stringify(body), signal: AbortSignal.timeout(20000), redirect: "manual",
   });
   if (!response.ok) throw new Error("processing-unavailable");
   return await response.json() as Record<string, unknown>;
