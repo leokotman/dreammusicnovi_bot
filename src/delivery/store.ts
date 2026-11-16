@@ -7,7 +7,7 @@ export interface Claim {
   next_part: number; part_attempts: number; claim_token: string;
   roles: string[]; visitor_cancelled: boolean | null; payload: EnrollmentEvent;
 }
-export type Outcome = { messageId: number } | { error: string; retrySeconds?: number; cooldownSeconds?: number };
+export type Outcome = { messageId: number } | { error: string; retrySeconds?: number; cooldownSeconds?: number; blocked?: true };
 
 export class DeliveryStore {
   constructor(public pool: Pool) {}

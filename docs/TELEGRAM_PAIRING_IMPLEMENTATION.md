@@ -117,18 +117,108 @@ not an infrastructure or credential prerequisite for continued implementation.
 Neither migration has been applied to a runtime database. Never roll back to a
 runtime that bypasses these checks after account-wide revocation is exposed.
 
+## Fourth increment: Start, candidate callbacks and account disconnect
+
+- Registered pairing middleware before ordinary commands, callbacks and text handling.
+  Only recognized `dmn1_` Start payloads enter pairing; malformed pairing payloads
+  are consumed without reaching question forwarding. Ordinary Start, help, admin,
+  unrelated callbacks and questions retain their existing paths. No ordinary bot
+  interaction activates consent.
+- Start validates the authenticated private-chat user and public username, reserves
+  the website candidate, registers durable bot consent, binds that exact grant back
+  to the website, then rechecks the original candidate before returning the stable
+  six-digit code. No code is sent before both authorities accept the binding. Start
+  does not activate the grant: activation still requires browser code verification.
+- The website supplies both immutable original attempt timestamps. New candidate
+  creation rejects attempts created at/before the account's last revocation, even
+  when that link had never reached this account before disconnect. Expiry is bounded
+  to ten minutes from creation and remains unchanged on retry. Excess future clock
+  skew is rejected (30-second ceiling). Creation minus that same 30-second
+  uncertainty must be strictly later than revocation; ambiguous links are rejected.
+  Reconnection may therefore require waiting and creating a fresh link. The future website handler must return stored timestamps, never refreshed
+  timestamps, and must not take them from public request bodies.
+- `/disconnect` and the Russian command/inline menu action revoke by authenticated
+  update ID before acknowledging success. Revocation does not require a username.
+  Group, bot and inconsistent user/chat identities cannot revoke. Repeated update
+  IDs cannot revoke a later reconnection. Failed writes remain retryable. An expired
+  callback acknowledgement cannot prevent the durable revocation.
+- Private `my_chat_member` updates revoke only when this configured bot is kicked
+  and the real actor matches the private chat. Unblock, unrelated member changes,
+  ordinary Start and menu navigation never restore consent. Block processing runs
+  whenever delivery is enabled, independently of the pairing-controls switch and
+  website availability. Authority errors propagate for webhook retry.
+- A definitive Telegram 403 with `Forbidden: bot was blocked by the user` revokes
+  the sending authorization and terminally cancels remaining visitor parts. Generic
+  403 errors are not inferred to be blocks. Shared staff destinations retain their
+  independent transport outcome. Repeated/late failures for an old grant or legacy
+  job cannot revoke a later reconnection; the original generation is fenced under
+  the account lock. No additional migration is needed for this operation.
+- Telegraf's default update-dumping error handler is replaced with a redacted,
+  retryable error. Caught pairing failures log only `telegram-pairing-failed`.
+  Callback and pairing failures never log bodies, codes, tokens,
+  identity payloads or raw transport errors. Sending a code still uses plain text.
+
+### Candidate callback contract (website implementation pending)
+
+The bot calls one fixed HTTPS URL whose path is
+`/api/telegram/connection/candidate`. Credentials, query strings and fragments in
+that URL are rejected. Requests use `Authorization: Bearer` with the configured
+current `WEBSITE_DELIVERY_API_SECRET`, a five-second deadline, `redirect: error`,
+and a maximum 4096-byte response. The website must authenticate before reading
+candidate data, accept the intended current/rotation service secrets, validate the
+fixed configured bot ID/environment, bound/validate the body, return no-store
+responses and redact failures. It must not follow credentialed redirects.
+
+Reserve request:
+
+```json
+{
+  "version": 1,
+  "botId": "<configured bot ID>",
+  "phase": "reserve",
+  "attempt": "dmn1_<canonical 256-bit base64url material>",
+  "userId": "<authenticated private Telegram ID>",
+  "username": "<authenticated public username without @>",
+  "codeHash": "<domain-separated 64-character lowercase SHA-256 hex>"
+}
+```
+
+The website atomically fixes the first account and code hash on the original
+unexpired, uncancelled pairing attempt. Another account cannot replace them.
+Same-account response-loss retries retain the original timestamps and candidate.
+Successful response has exactly:
+`{ "version": 1, "createdAt": "<canonical ISO UTC>", "expiresAt": "<canonical ISO UTC>" }`.
+
+Bind repeats the same request fields with `phase: "bind"` and
+`consent: { id, userId, generation }` from the bot authority. The website atomically
+binds that exact grant to its previously reserved account/hash/attempt; retries
+cannot replace a grant or resurrect cancelled, expired or revoked attempts.
+Successful response has exactly `{ "version": 1, "registered": true }`.
+The public browser can only submit its attempt/code; it cannot call this service
+callback or supply recipient/grant identity. A reserve without successful bind
+must never become verifiable. Neither phase issues a website proof or grants
+historical access. Keep later browser verification's authoritative activation and
+consent checks; the final bot check cannot remove all distributed revocation races.
+
+### Activation boundary
+
+`WEBSITE_PAIRING_ENABLED=true` plus `WEBSITE_DELIVERY_ENABLED=true` exposes the new
+pairing/disconnect controls. Pairing stays disabled by default. When eventually
+configured, `WEBSITE_PAIRING_CANDIDATE_URL` must point to the intended website's
+fixed callback above. These are code configuration interfaces, not a request to
+change any current secrets, registration or deployment. Do not enable controls
+before the compatible website APIs/UI/status-v2 reader and reviewed runtime
+migrations 002/003 are ready. Existing runtime OIDC remains unchanged.
+
 ## Remaining work
 
-1. Authenticated candidate registration, website callback/client and recognized
-   pairing Start handling, then private-chat command/menu disconnect and
-   authenticated block events. Keep controls disabled until the compatible website
-   contract and complete handler path are ready; unblock/ordinary Start must not
-   restore consent. Durable duplicate/out-of-order update fencing already exists.
-2. Website additive schema, persistent limits, begin/candidate/verify/cancel APIs,
-   reproducible browser-bound proof, revocation-aware enrollment, status-v2
-   validation/reconciliation/read-only admin display, and Russian Start/code/QR UI.
-3. Actual verified local database migration/readiness gates, cross-repository tests,
-   isolated staging acceptance and separately authorized production release.
+1. Website additive schema and persistent limits; authenticated two-phase candidate
+   callback; begin/verify/cancel APIs; reproducible browser-bound proof; consent-aware
+   enrollment; status-v2 validation/reconciliation/read-only admin display; and
+   Russian Start/code/QR UI. Remove website connection OIDC only with its replacement.
+2. Actual verified local database migration/readiness gates, cross-repository tests,
+   isolated staging acceptance and separately authorized production release. Manual
+   device/browser checks have not been performed for this inactive bot increment.
 
 Preserve both OIDC archive branches. Never deploy an old runtime that bypasses
 revocation after the consent feature launches.
@@ -164,3 +254,56 @@ Official references: [webhooks](https://core.telegram.org/bots/api#setwebhook),
   and mocked Telegram/queue transport. No dotenv or runtime database access.
 - No runtime migration, secrets/configuration change, external Telegram call,
   commit, push or deployment. Both OIDC archive branches remain intact.
+
+## Fourth-increment validation (2026-11-16)
+
+- Build and `git diff --check` passed. Final bot coverage run: **38 suites,
+  465 tests passed, none skipped**, including 26 real PostgreSQL integration tests.
+- All changed executable production modules have **100% statements, branches,
+  functions and lines**: bot registration, command menus, main menu, pairing
+  client/config/handlers/runtime/service/consent, delivery orchestration and Telegram
+  transport. `store.ts` changes only its outcome type; its existing runtime remains
+  fully covered. Coverage now includes `bot.ts` instead of excluding it.
+- Whole repository: 82.36% statements, 68.60% branches, 81.26% functions,
+  83.78% lines. No thresholds were lowered and no changed modules were excluded.
+- Real SQL tests cover unopened pre-disconnect links, concurrent block failures,
+  old-failure/reconnection isolation, stable Start retries, first-identity conflicts,
+  immutable expiry and revocation during callback binding, alongside the existing
+  delivery cancellation/recovery tests. Callback transport is mocked; there were
+  no external website or Telegram calls.
+- Only the dedicated temporary loopback scratch cluster was used; no runtime
+  dotenv/database access, migration, secret change, registration, deployment,
+  commit or push. The scratch PostgreSQL server was stopped after final validation.
+
+## Review corrections (2026-11-17)
+
+- Reproduced all three review defects with failing tests before fixing them:
+  missing redacted handler diagnostics, rejection of valid ten-minute attempts
+  under positive website clock skew, and reopening pre-disconnect links under skew.
+- Client timestamp validation now uses named shared lifetime/skew constants, a
+  canonical timestamp parser, one captured current time and separate readable checks
+  for clock skew, lifetime and expiry. The conflicting `now + ten minutes` expiry
+  ceiling is removed from both the client and consent authority; the ten-minute
+  lifetime is measured from original creation, preserving the allowed clock skew.
+- New candidate consent uses the earliest possible creation time: supplied creation
+  minus the allowed 30-second uncertainty must be strictly after authority-owned
+  revocation. Equality is rejected. A website clock twenty seconds ahead cannot
+  make a link created five seconds before disconnect eligible. This assumes the
+  configured 30-second clock uncertainty bound; arbitrarily drifting clocks are not
+  supported. Recent legitimate links can also be rejected conservatively, so the
+  Russian error response asks visitors to wait and create a fresh link. Manual
+  submission remains available.
+- Regression tests cover positive-skew acceptance in the client and real SQL,
+  unopened old-link rejection, the exact uncertainty boundary, fresh activation
+  beyond it, and fixed-marker logging without error payloads. Existing reconnect
+  fixtures move only synthetic revocation timestamps to model elapsed time;
+  generations, tombstones and cancellation assertions remain intact.
+- Final build and diff checks passed. Full final-tree coverage: **38 suites,
+  471 tests passed, none skipped**, including 29 real PostgreSQL tests. Changed
+  runtime modules (`client`, `consent`, `handlers`, `timing`) have 100% statements,
+  branches, functions and lines. Whole repository: 82.50% statements, 68.60%
+  branches, 81.30% functions, 83.94% lines.
+- Tests used the dedicated disposable loopback scratch PostgreSQL cluster with
+  synthetic data and mocked external transport; it was stopped afterward. No
+  runtime database, migration, credential, webhook registration, deployment,
+  commit, push or staging-index change. Pairing remains disabled by default.

@@ -1,3 +1,5 @@
+import { pairingEnabled } from "../pairing/config";
+import { DISCONNECT } from "../pairing/handlers";
 import { Markup } from "telegraf";
 import {
   getVisibleSectionIds,
@@ -29,6 +31,7 @@ export function getMainMenu() {
     const callbackData = SECTION_CALLBACK[id] ?? `${MAIN_CUSTOM_PREFIX}${id}`;
     return [Markup.button.callback(num + label, callbackData)];
   });
+  if (pairingEnabled()) buttons.push([Markup.button.callback("Отключить сайт", DISCONNECT)]);
   return Markup.inlineKeyboard(buttons);
 }
 

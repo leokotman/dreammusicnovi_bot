@@ -36,4 +36,11 @@ describe("delivery transports", () => {
     fetchMock.mockResolvedValue(response(200, { ok: true, result: { message_id: "bad" } }));
     expect(await send(config, "111", "text", 1)).toMatchObject({ error: "telegram-unavailable" });
   });
+
+  it("distinguishes a definitive blocked account from other forbidden responses", async () => {
+    fetchMock.mockResolvedValue(response(403, { error_code: 403, description: "Forbidden: bot was blocked by the user" }));
+    expect(await send(config, "111", "text", 1)).toEqual({ error: "telegram-403", blocked: true });
+    fetchMock.mockResolvedValue(response(403, { error_code: 403, description: "Forbidden: bot was kicked from the group chat" }));
+    expect(await send(config, "111", "text", 1)).toEqual({ error: "telegram-403" });
+  });
 });

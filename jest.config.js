@@ -9,7 +9,6 @@ module.exports = {
     "src/**/*.ts",
     "api/website/**/*.ts",
     "api/webhook.ts",
-    "!src/bot.ts",
     "!src/config/env.ts",
     "!src/storage.ts",
     "!src/content/migration.ts",

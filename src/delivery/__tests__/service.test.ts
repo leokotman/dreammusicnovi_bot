@@ -8,7 +8,7 @@ const sendMock = send as jest.Mock;
 
 describe("delivery orchestration", () => {
   const store = { accept: jest.fn(), status: jest.fn(), pending: jest.fn(), claim: jest.fn(), finish: jest.fn(), cancelVisitor: jest.fn(), recoveryPage: jest.fn() };
-  const consent = { allows: jest.fn() };
+  const consent = { allows: jest.fn(), blockedDelivery: jest.fn() };
   const service = new DeliveryService(store as unknown as DeliveryStore, config, consent as never);
   beforeEach(() => {
     jest.resetAllMocks();
@@ -106,4 +106,29 @@ describe("delivery orchestration", () => {
     expect(store.cancelVisitor).not.toHaveBeenCalled();
   });
 
+
+  it("revokes definitive blocked visitors and cancels their unsent parts", async () => {
+    const modern = { ...event, consent: { id: event.eventId, userId: event.telegramUserId, generation: "0" } };
+    const claim = { roles: ["visitor"], payload: modern, destination: event.telegramUserId,
+      parts: [{ text: "visitor" }], next_part: 0, part_attempts: 1 };
+    store.claim.mockResolvedValue(claim); sendMock.mockResolvedValue({ error: "telegram-403", blocked: true });
+    store.cancelVisitor.mockResolvedValue(null);
+    await service.process(event.eventId);
+    expect(consent.blockedDelivery).toHaveBeenCalledWith(event.telegramUserId, modern.consent);
+    expect(store.cancelVisitor).toHaveBeenCalledWith(claim); expect(store.finish).not.toHaveBeenCalled();
+    const staff = { ...claim, roles: ["visitor", "admin"], visitor_cancelled: true };
+    store.cancelVisitor.mockResolvedValue(staff); await service.process(event.eventId);
+    expect(store.finish).toHaveBeenCalledWith(staff, { error: "telegram-403", blocked: true });
+    consent.blockedDelivery.mockClear(); store.claim.mockResolvedValue(staff); await service.process(event.eventId);
+    store.claim.mockResolvedValue({ ...staff, roles: ["admin"], visitor_cancelled: false }); await service.process(event.eventId);
+    expect(consent.blockedDelivery).not.toHaveBeenCalled();
+  });
+  it("leaves a blocked visitor recoverable if durable revocation fails", async () => {
+    store.claim.mockResolvedValue({ roles: ["visitor"], payload: event, destination: event.telegramUserId,
+      parts: [{ text: "visitor" }], next_part: 0, part_attempts: 1 });
+    sendMock.mockResolvedValue({ error: "telegram-403", blocked: true });
+    consent.blockedDelivery.mockRejectedValue(new Error("authority unavailable"));
+    await expect(service.process(event.eventId)).rejects.toThrow("authority unavailable");
+    expect(store.finish).not.toHaveBeenCalled(); expect(store.cancelVisitor).not.toHaveBeenCalled();
+  });
 });

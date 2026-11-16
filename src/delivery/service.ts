@@ -28,7 +28,12 @@ export class DeliveryService {
     if (claim) {
       const outcome = claim.part_attempts > 8 ? { error: "attempts-exhausted" } :
         await send(this.config, claim.destination, claim.parts[claim.next_part].text, claim.part_attempts);
-      await this.store.finish(claim, outcome);
+      if ("blocked" in outcome && outcome.blocked && claim.roles.includes("visitor") && !claim.visitor_cancelled) {
+        await this.consent.blockedDelivery(claim.payload.telegramUserId, claim.payload.consent);
+        claim = await this.store.cancelVisitor(claim);
+      }
+      // A shared staff destination still records its independent transport failure.
+      if (claim) await this.store.finish(claim, outcome);
     }
     return this.store.pending(id);
   }

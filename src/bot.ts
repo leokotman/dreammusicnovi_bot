@@ -1,4 +1,5 @@
 import { Telegraf } from "telegraf";
+import { websitePairing } from "./pairing/runtime";
 import { env } from "./config/env";
 import { initContent } from "./content/loader";
 import { registerCommands } from "./handlers/commands";
@@ -12,6 +13,9 @@ export function createBot(): Telegraf {
 
   const bot = new Telegraf(env.BOT_TOKEN);
 
+  // Telegraf's default handler logs the entire update, including pairing tokens/codes.
+  bot.catch(() => { throw new Error("telegram-update-failed"); });
+  bot.use(websitePairing);
   registerCommands(bot);
   registerCallbacks(bot);
   registerAdmin(bot);

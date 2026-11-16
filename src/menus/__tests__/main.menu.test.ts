@@ -86,4 +86,20 @@ describe("main.menu", () => {
       expect(result).toContain("Выберите пункт");
     });
   });
+
+  it("exposes disconnect only when pairing and delivery are enabled", () => {
+    const before = { ...process.env };
+    try {
+      process.env.WEBSITE_PAIRING_ENABLED = "true"; process.env.WEBSITE_DELIVERY_ENABLED = "true";
+      expect(getMainMenu().reply_markup.inline_keyboard.at(-1)?.[0]).toMatchObject({ text: "Отключить сайт", callback_data: "website_disconnect" });
+    } finally { process.env = before; }
+  });
+
+  it("keeps custom sections and missing subitem captions usable with disconnect enabled", () => {
+    const loader = require("../../content/loader");
+    loader.getVisibleSectionIds.mockReturnValueOnce(["sec_foo"]);
+    expect(getMainMenu().reply_markup.inline_keyboard[0][0]).toMatchObject({ callback_data: "main_custom:sec_foo" });
+    loader.getSectionSubItem.mockReturnValueOnce(undefined);
+    expect(getCustomSectionSubMenu("sec_foo").reply_markup.inline_keyboard[0][0]).toMatchObject({ text: "item_1" });
+  });
 });

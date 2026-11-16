@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { Pool, PoolClient } from "pg";
+import { ATTEMPT_LIFETIME_MS, MAX_CLOCK_SKEW_MS } from "./timing";
 import { ApiError } from "../delivery/contract";
 
 export interface ConsentGrant {
@@ -38,7 +39,7 @@ export class ConsentStore {
   }
 
   /** First candidate wins; identical retries neither consume quota nor refresh expiry. */
-  async candidate(userId: string, attemptHash: string, expiresAt: Date): Promise<ConsentGrant> {
+  async candidate(userId: string, attemptHash: string, expiresAt: Date, createdAt: Date): Promise<ConsentGrant> {
     return this.transaction(async client => {
       // Serialize the same attempt even when two different accounts race for it.
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [attemptHash]);
@@ -56,8 +57,17 @@ export class ConsentStore {
       }
       // The website supplies the original attempt expiry. Never extend it on retry.
       const valid = await client.query(`SELECT $1::timestamptz > now()
-        AND $1::timestamptz <= now()+interval '10 minutes' AS valid`, [expiresAt]);
+        AND $2::timestamptz <= now()+($4::double precision * interval '1 millisecond')
+        AND $1::timestamptz > $2::timestamptz
+        AND $1::timestamptz <= $2::timestamptz+($3::double precision * interval '1 millisecond') AS valid`,
+      [expiresAt, createdAt, ATTEMPT_LIFETIME_MS, MAX_CLOCK_SKEW_MS]);
       if (!valid.rows[0].valid) throw new ApiError(410, "attempt-expired");
+      // Use the earliest possible creation time, accounting for a website clock ahead of this authority.
+      // Ambiguous links fail closed; reconnecting requires a new link beyond the uncertainty window.
+      const fresh = await client.query(`SELECT 1 FROM website_consent_users
+        WHERE user_id=$1 AND (revoked_at IS NULL OR revoked_at < $2::timestamptz-($3::double precision * interval '1 millisecond'))`,
+      [userId, createdAt, MAX_CLOCK_SKEW_MS]);
+      if (!fresh.rowCount) throw new ApiError(409, "consent-revoked");
       const recent = await client.query(`SELECT count(*)::integer AS count
         FROM website_consent_grants WHERE user_id=$1 AND created_at>now()-interval '10 minutes'`, [userId]);
       if (recent.rows[0].count >= 5) throw new ApiError(429, "pairing-rate-limited");
@@ -96,6 +106,25 @@ export class ConsentStore {
     const result = await this.pool.query(`SELECT 1 FROM website_consent_users
       WHERE user_id=$1 AND revoked_at IS NOT NULL`, [userId]);
     return !result.rowCount;
+  }
+
+  /** A definitive blocked send fences its original authorization, never a later reconnection. */
+  async blockedDelivery(userId: string, grant?: ConsentGrant): Promise<void> {
+    return this.transaction(async client => {
+      const generation = await this.lockUser(client, userId);
+      if (grant) {
+        if (grant.userId !== userId || grant.generation !== generation) return;
+        const active = await client.query(`SELECT 1 FROM website_consent_grants
+          WHERE id=$1 AND user_id=$2 AND generation=$3 AND activated_at IS NOT NULL`,
+        [grant.id, userId, generation]);
+        if (!active.rowCount) return;
+      } else {
+        const previous = await client.query("SELECT revoked_at FROM website_consent_users WHERE user_id=$1", [userId]);
+        if (previous.rows[0].revoked_at) return;
+      }
+      await client.query(`UPDATE website_consent_users SET generation=generation+1,revoked_at=now()
+        WHERE user_id=$1`, [userId]);
+    });
   }
 
   /** Call only for authenticated private-chat disconnect/block updates, never unblock. */

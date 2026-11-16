@@ -98,4 +98,15 @@ describe("botCommands", () => {
       );
     });
   });
+
+  it("adds disconnect to user and admin command menus only with pairing enabled", async () => {
+    const before = { ...process.env };
+    try {
+      process.env.WEBSITE_PAIRING_ENABLED = "true"; process.env.WEBSITE_DELIVERY_ENABLED = "true";
+      await updateBotCommands(mockTelegram, [111]);
+      for (const [commands] of mockSetMyCommands.mock.calls) expect(commands).toContainEqual({ command: "disconnect", description: "Отключить сайт" });
+      await setCommandsForAdminChat(mockTelegram, 111);
+      expect(mockSetMyCommands.mock.calls.at(-1)?.[0]).toContainEqual({ command: "disconnect", description: "Отключить сайт" });
+    } finally { process.env = before; }
+  });
 });

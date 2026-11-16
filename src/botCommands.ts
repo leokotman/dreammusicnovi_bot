@@ -1,6 +1,7 @@
+import { pairingEnabled } from "./pairing/config";
 /**
  * Bot menu commands via setMyCommands (https://core.telegram.org/bots/api#setmycommands).
- * Default scope shows only /start and /help. Admins get /admin in their private chat via scope "chat".
+ * Default scope shows /start and /help, plus gated /disconnect. Admins also get /admin via scope "chat".
  */
 
 export type BotCommand = { command: string; description: string };
@@ -15,19 +16,21 @@ const USER_COMMANDS: BotCommand[] = [
   { command: "help", description: "Помощь" },
 ];
 
-const ADMIN_COMMANDS: BotCommand[] = [
-  ...USER_COMMANDS,
-  { command: "admin", description: "Админ-панель" },
-];
+function userCommands(): BotCommand[] {
+  return pairingEnabled() ? [...USER_COMMANDS, { command: "disconnect", description: "Отключить сайт" }] : USER_COMMANDS;
+}
+function adminCommands(): BotCommand[] {
+  return [...userCommands(), { command: "admin", description: "Админ-панель" }];
+}
 
 /**
  * Set default (and all_private_chats) commands to user commands only, then set chat scope for each admin so they see /admin.
  */
 export async function updateBotCommands(telegram: TelegramLike, adminIds: number[]): Promise<void> {
-  await telegram.setMyCommands(USER_COMMANDS, { scope: { type: "default" } });
-  await telegram.setMyCommands(USER_COMMANDS, { scope: { type: "all_private_chats" } });
+  await telegram.setMyCommands(userCommands(), { scope: { type: "default" } });
+  await telegram.setMyCommands(userCommands(), { scope: { type: "all_private_chats" } });
   for (const chatId of adminIds) {
-    await telegram.setMyCommands(ADMIN_COMMANDS, { scope: { type: "chat", chat_id: chatId } });
+    await telegram.setMyCommands(adminCommands(), { scope: { type: "chat", chat_id: chatId } });
   }
 }
 
@@ -35,7 +38,7 @@ export async function updateBotCommands(telegram: TelegramLike, adminIds: number
  * Set commands for a single chat (e.g. when adding a new admin) so they see /admin.
  */
 export async function setCommandsForAdminChat(telegram: TelegramLike, chatId: number): Promise<void> {
-  await telegram.setMyCommands(ADMIN_COMMANDS, { scope: { type: "chat", chat_id: chatId } });
+  await telegram.setMyCommands(adminCommands(), { scope: { type: "chat", chat_id: chatId } });
 }
 
 let telegramRef: TelegramLike | null = null;
